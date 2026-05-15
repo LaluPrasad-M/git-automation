@@ -1,0 +1,45 @@
+name: Scheduled PR Check
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  GH_TOKEN: ${{ secrets.MY_PAT }}
+  MY_GITHUB_USERNAME: ${{ vars.MY_GITHUB_USERNAME }}
+  TARGET_REPOS_JSON: ${{ vars.TARGET_REPOS_JSON }}
+
+jobs:
+  dispatch-pending:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install deps
+        run: sudo apt-get update && sudo apt-get install -y jq
+      - name: Dispatch review candidates
+        run: |
+          echo "$TARGET_REPOS_JSON" | jq -r '.[]' | while read -r repo; do
+            [ -z "$repo" ] && continue
+
+            gh pr list --repo "$repo" \
+              --search "review-requested:$MY_GITHUB_USERNAME state:open" \
+              --json number,author \
+              --jq '.[] | @base64' | while read -r row; do
+                [ -z "$row" ] && continue
+                decoded="$(echo "$row" | base64 --decode)"
+                num="$(echo "$decoded" | jq -r '.number')"
+                author="$(echo "$decoded" | jq -r '.author.login')"
+                if [ "$author" != "$MY_GITHUB_USERNAME" ]; then
+                  gh api "repos/${GITHUB_REPOSITORY}/dispatches" \
+                    -f event_type=pr_review_requested \
+                    -f "client_payload[action]=review" \
+                    -f "client_payload[pr_number]=$num" \
+                    -f "client_payload[target_repo]=$repo" \
+                    -f "client_payload[source]=scheduled"
+                fi
+              done
+          done

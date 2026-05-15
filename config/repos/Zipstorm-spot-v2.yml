@@ -1,0 +1,19 @@
+repo: Zipstorm/spot-v2
+
+review:
+  enabled: true
+  max_diff_lines: 6000
+  severity_block_threshold: major
+
+approve:
+  enabled: true
+  require_ci_pass: true
+  require_claude_review: true
+  required_checks:
+    - ci
+
+merge:
+  enabled: true
+  method: squash
+  min_approvals: 1
+  require_ci_pass: true

@@ -1,0 +1,58 @@
+.PHONY: help run git build up down restart logs ps test check-tools check-env
+
+SERVICE := sentinel-listener
+
+help:
+	@echo "Targets:"
+	@echo "  make run.      - start Docker listener and verify gh auth"
+	@echo "  make build     - build Docker image"
+	@echo "  make up        - start listener container"
+	@echo "  make down      - stop listener container"
+	@echo "  make restart   - restart listener container"
+	@echo "  make logs      - follow listener logs"
+	@echo "  make ps        - show container status"
+	@echo "  make test      - run local shell tests"
+
+check-tools:
+	@command -v docker >/dev/null 2>&1 || (echo "docker is required" && exit 1)
+	@docker compose version >/dev/null 2>&1 || (echo "docker compose is required" && exit 1)
+
+check-env:
+	@test -f .env || (echo ".env not found. Copy .env.example to .env first." && exit 1)
+	@grep -Eq '^GH_TOKEN=.+' .env || (echo "GH_TOKEN is missing in .env" && exit 1)
+	@grep -Eq '^ANTHROPIC_API_KEY=.+' .env || (echo "ANTHROPIC_API_KEY is missing in .env" && exit 1)
+	@grep -Eq '^MY_GITHUB_USERNAME=.+' .env || (echo "MY_GITHUB_USERNAME is missing in .env" && exit 1)
+	@grep -Eq '^TARGET_REPOS_JSON=.+' .env || (echo "TARGET_REPOS_JSON is missing in .env" && exit 1)
+
+build: check-tools check-env
+	docker compose build $(SERVICE)
+
+up: check-tools check-env
+	docker compose up -d $(SERVICE)
+
+run: check-tools check-env
+	docker compose up -d --build $(SERVICE)
+	@echo "Listener started. Use 'make logs' to follow logs."
+
+git:
+	@command -v gh >/dev/null 2>&1 || (echo "gh CLI is required" && exit 1)
+	@GH_PAGER=cat gh auth status >/dev/null 2>&1 || (echo "gh auth not ready. Run 'gh auth login'." && exit 1)
+	@echo "gh auth is ready"
+
+down: check-tools
+	docker compose down
+
+restart: down run
+
+logs: check-tools
+	docker compose logs -f $(SERVICE)
+
+ps: check-tools
+	docker compose ps
+
+test:
+	@for f in scripts/*.sh tests/*.sh; do bash -n "$$f" || exit 1; done
+	@./tests/test-classify.sh
+	@./tests/test-guards.sh
+	@bash tests/test-merge-ci.sh
+	@./tests/test-integration.sh

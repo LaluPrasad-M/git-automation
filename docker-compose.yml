@@ -1,0 +1,15 @@
+services:
+  sentinel-listener:
+    build: .
+    container_name: sentinel-listener
+    restart: unless-stopped
+    working_dir: /app
+    env_file:
+      - .env
+    environment:
+      - POLL_INTERVAL_SECONDS=60
+      - WORKSPACE=/app
+      - GITHUB_WORKSPACE=/app
+    volumes:
+      - ./:/app
+    command: bash scripts/event-listener.sh

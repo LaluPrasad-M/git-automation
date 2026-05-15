@@ -1,0 +1,36 @@
+name: Self Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck jq
+          sudo snap install yq
+      - name: Shellcheck
+        run: find scripts -name '*.sh' -print0 | xargs -0 -n1 shellcheck
+      - name: Validate YAML
+        run: |
+          pipx install yamllint
+          yamllint .github/workflows config
+      - name: Unit tests
+        run: |
+          bash tests/test-classify.sh
+          bash tests/test-guards.sh
+          bash tests/test-merge-ci.sh
+      - name: Integration dry run
+        env:
+          DRY_RUN: "true"
+          TARGET_REPO: Zipstorm/spot-v2
+          TARGET_REPOS_JSON: '["Zipstorm/spot-v2"]'
+          MY_GITHUB_USERNAME: testuser
+        run: bash tests/test-integration.sh

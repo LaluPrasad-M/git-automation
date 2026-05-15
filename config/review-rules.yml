@@ -1,0 +1,33 @@
+severity_levels:
+  - critical
+  - major
+  - minor
+  - nit
+
+review_checklist:
+  security:
+    - "No hardcoded secrets, API keys, or credentials"
+    - "Input validation on all external data"
+    - "No SQL injection, XSS, or SSRF vulnerabilities"
+    - "Proper authentication and authorization checks"
+  correctness:
+    - "Logic handles edge cases (null, empty, boundary values)"
+    - "Error handling is appropriate and does not swallow errors"
+    - "Concurrent code avoids race conditions"
+  performance:
+    - "No obvious N+1 queries or unbounded loops"
+    - "Large data sets are paginated or streamed when needed"
+    - "Avoid unnecessary re-computation and re-renders"
+  maintainability:
+    - "Functions are cohesive and reasonably sized"
+    - "Naming is clear and descriptive"
+    - "No dead code or commented-out code blocks"
+  testing:
+    - "New behavior has tests"
+    - "Tests include happy and unhappy paths"
+
+auto_approve_criteria:
+  max_files_changed: 5
+  max_lines_changed: 200
+  no_critical_or_major_findings: true
+  all_ci_checks_pass: true

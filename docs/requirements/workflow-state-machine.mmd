@@ -1,0 +1,24 @@
+stateDiagram-v2
+    [*] --> EventReceived
+    EventReceived --> ParsePayload
+    ParsePayload --> SelfFilter: Check author
+    SelfFilter --> Dropped: Is self
+    SelfFilter --> ClassifyAction: Not self
+    ClassifyAction --> AutoReview: review_requested
+    ClassifyAction --> AutoFix: comment_on_my_pr
+    ClassifyAction --> AutoApprove: ci_passed
+    ClassifyAction --> AutoMerge: approval_threshold_met
+    AutoReview --> PostFeedback
+    AutoFix --> PushCommit
+    AutoApprove --> CheckCI
+    CheckCI --> ApprovePR: All green
+    CheckCI --> WaitRetry: Pending
+    AutoMerge --> CheckApprovals
+    CheckApprovals --> MergePR: Threshold met
+    CheckApprovals --> WaitRetry: Not met
+    PostFeedback --> [*]
+    PushCommit --> [*]
+    ApprovePR --> [*]
+    MergePR --> [*]
+    WaitRetry --> [*]
+    Dropped --> [*]

@@ -1,0 +1,168 @@
+name: Claude Git Sentinel
+
+on:
+  repository_dispatch:
+    types:
+      - pr_notification
+      - pr_review_requested
+      - pr_comment_received
+      - pr_ci_completed
+      - pr_approval_received
+      - manual_trigger
+
+permissions:
+  contents: read
+
+env:
+  MY_GITHUB_USERNAME: ${{ vars.MY_GITHUB_USERNAME }}
+  GH_TOKEN: ${{ secrets.MY_PAT }}
+  TARGET_REPOS_JSON: ${{ vars.TARGET_REPOS_JSON }}
+
+jobs:
+  classify:
+    runs-on: ubuntu-latest
+    outputs:
+      action: ${{ steps.classify.outputs.action }}
+      pr_number: ${{ steps.classify.outputs.pr_number }}
+      pr_author: ${{ steps.classify.outputs.pr_author }}
+      target_repo: ${{ steps.classify.outputs.target_repo }}
+      policy_file: ${{ steps.policy.outputs.policy_file }}
+      prompt_dir: ${{ steps.policy.outputs.prompt_dir }}
+      should_skip: ${{ steps.guard.outputs.should_skip }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install deps
+        run: sudo snap install yq && sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Classify Event
+        id: classify
+        run: bash scripts/classify.sh '${{ toJSON(github.event.client_payload) }}'
+
+      - name: Resolve Policy
+        id: policy
+        run: bash scripts/load-policy.sh '${{ steps.classify.outputs.target_repo }}'
+
+      - name: Safety Guards
+        id: guard
+        env:
+          TARGET_REPO: ${{ steps.classify.outputs.target_repo }}
+          POLICY_FILE: ${{ steps.policy.outputs.policy_file }}
+        run: |
+          bash scripts/guards.sh \
+            --author '${{ steps.classify.outputs.pr_author }}' \
+            --bot-user '${{ env.MY_GITHUB_USERNAME }}' \
+            --action '${{ steps.classify.outputs.action }}' \
+            --pr-number '${{ steps.classify.outputs.pr_number }}'
+
+  auto-review:
+    needs: classify
+    if: needs.classify.outputs.action == 'review' && needs.classify.outputs.should_skip != 'true'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: sentinel-${{ needs.classify.outputs.target_repo }}-${{ needs.classify.outputs.pr_number }}-review
+      cancel-in-progress: true
+    env:
+      TARGET_REPO: ${{ needs.classify.outputs.target_repo }}
+      PR_NUMBER: ${{ needs.classify.outputs.pr_number }}
+      POLICY_FILE: ${{ needs.classify.outputs.policy_file }}
+      PROMPT_DIR: ${{ needs.classify.outputs.prompt_dir }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install deps
+        run: sudo snap install yq && sudo apt-get update && sudo apt-get install -y jq
+      - name: Setup workspace
+        run: bash scripts/setup-workspace.sh
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code
+      - name: Run review
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: bash scripts/review.sh
+
+  auto-followup:
+    needs: classify
+    if: needs.classify.outputs.action == 'followup' && needs.classify.outputs.should_skip != 'true'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: sentinel-${{ needs.classify.outputs.target_repo }}-${{ needs.classify.outputs.pr_number }}-followup
+      cancel-in-progress: true
+    env:
+      TARGET_REPO: ${{ needs.classify.outputs.target_repo }}
+      PR_NUMBER: ${{ needs.classify.outputs.pr_number }}
+      POLICY_FILE: ${{ needs.classify.outputs.policy_file }}
+      PROMPT_DIR: ${{ needs.classify.outputs.prompt_dir }}
+      EXCEPTION_REGISTRY_ISSUE_NUMBER: ${{ vars.EXCEPTION_REGISTRY_ISSUE_NUMBER }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install deps
+        run: sudo snap install yq && sudo apt-get update && sudo apt-get install -y jq
+      - name: Setup workspace
+        run: bash scripts/setup-workspace.sh
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code
+      - name: Run thread follow-up
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: bash scripts/thread-followup.sh
+
+  auto-approve:
+    needs: classify
+    if: needs.classify.outputs.action == 'approve' && needs.classify.outputs.should_skip != 'true'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: sentinel-${{ needs.classify.outputs.target_repo }}-${{ needs.classify.outputs.pr_number }}-approve
+      cancel-in-progress: true
+    env:
+      TARGET_REPO: ${{ needs.classify.outputs.target_repo }}
+      PR_NUMBER: ${{ needs.classify.outputs.pr_number }}
+      POLICY_FILE: ${{ needs.classify.outputs.policy_file }}
+      PROMPT_DIR: ${{ needs.classify.outputs.prompt_dir }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install deps
+        run: sudo snap install yq && sudo apt-get update && sudo apt-get install -y jq
+      - name: Setup workspace
+        run: bash scripts/setup-workspace.sh
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code
+      - name: Run approve
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: bash scripts/approve.sh
+
+  auto-merge:
+    needs: classify
+    if: needs.classify.outputs.action == 'merge' && needs.classify.outputs.should_skip != 'true'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: sentinel-${{ needs.classify.outputs.target_repo }}-${{ needs.classify.outputs.pr_number }}-merge
+      cancel-in-progress: true
+    env:
+      TARGET_REPO: ${{ needs.classify.outputs.target_repo }}
+      PR_NUMBER: ${{ needs.classify.outputs.pr_number }}
+      POLICY_FILE: ${{ needs.classify.outputs.policy_file }}
+      PROMPT_DIR: ${{ needs.classify.outputs.prompt_dir }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install deps
+        run: sudo snap install yq && sudo apt-get update && sudo apt-get install -y jq
+      - name: Setup workspace
+        run: bash scripts/setup-workspace.sh
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code
+      - name: Run merge
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: bash scripts/merge.sh
+
+  notify:
+    needs: [classify, auto-review, auto-followup, auto-approve, auto-merge]
+    if: always()
+    runs-on: ubuntu-latest
+    env:
+      PR_NUMBER: ${{ needs.classify.outputs.pr_number }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Notify
+        run: bash scripts/notify.sh '${{ needs.classify.outputs.action }}' '${{ job.status }}'
