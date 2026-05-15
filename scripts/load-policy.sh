@@ -16,8 +16,8 @@ repo_in_allowlist() {
   fi
 
   while IFS= read -r item; do
-    item="${item#${item%%[![:space:]]*}}"
-    item="${item%${item##*[![:space:]]}}"
+    item="${item#"${item%%[![:space:]]*}"}"
+    item="${item%"${item##*[![:space:]]}"}"
     [[ -z "$item" ]] && continue
     if [[ "$item" == "$repo" ]]; then
       return 0

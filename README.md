@@ -24,6 +24,7 @@ Claude Git Sentinel is built to solve that gap:
 - Conditional approval with CI and thread-gating checks
 - Conditional merge with label, CI, approval, and mergeability gates
 - Multi-repository support with per-repo policy and prompt overrides
+- Author whitelist for automatic review without explicit reviewer assignment
 - Exception learning capture through a central registry issue
 
 ## What Makes It Different
@@ -91,47 +92,81 @@ make test
 
 ### Core env values for local mode
 
-- GH_TOKEN
-- ANTHROPIC_API_KEY
-- MY_GITHUB_USERNAME
-- TARGET_REPOS_JSON
-- GITHUB_REPOSITORY
-- EXCEPTION_REGISTRY_ISSUE_NUMBER (optional, recommended)
+| Variable | Required | Purpose |
+|---|---|---|
+| `GH_TOKEN` | Yes | GitHub API access |
+| `ANTHROPIC_API_KEY` | Yes | Claude API access |
+| `MY_GITHUB_USERNAME` | Yes | Bot account used for self-filter and thread resolution |
+| `TARGET_REPOS_JSON` | Yes | Allow-list of repos the sentinel can act on |
+| `WORKSPACE` | Yes | Absolute path to this repo on your machine |
+| `GITHUB_REPOSITORY` | Yes | Control-plane repo for rate-limit checks and audit logging |
+| `AUTO_REVIEW_AUTHORS` | No | Comma-separated GitHub logins — PRs opened by these authors trigger review automatically without explicit reviewer assignment |
+| `EXCEPTION_REGISTRY_ISSUE_NUMBER` | No | Issue number in `GITHUB_REPOSITORY` for exception-learning log (thread-followup) |
+| `AUDIT_ISSUE_NUMBER` | No | Issue number in `GITHUB_REPOSITORY` for pipeline run audit log (notify) |
+| `DRY_RUN` | No | Set to `true` to suppress all write operations — useful for testing |
+| `MAX_ACTIONS_PER_HOUR` | No | Rate limit cap, default 20 |
+| `POLL_INTERVAL_SECONDS` | No | Listener poll interval, default 60 |
 
-For listener mode, TARGET_REPOS_JSON is the source of truth and can include multiple repositories. The listener scans each repo in that allow-list.
+`GITHUB_WORKSPACE` is auto-derived from `WORKSPACE` — no need to set it separately.
+
+### TARGET_REPOS_JSON format
+
+Both formats are accepted:
+
+```bash
+# JSON array (preferred)
+TARGET_REPOS_JSON=["Zipstorm/spot-v2","Zipstorm/other-repo"]
+
+# Comma-separated
+TARGET_REPOS_JSON=Zipstorm/spot-v2,Zipstorm/other-repo
+```
+
+### Review trigger modes
+
+The sentinel triggers a review when:
+
+1. **Reviewer assignment** — `MY_GITHUB_USERNAME` is explicitly added as a reviewer on a PR.
+2. **Author whitelist** — A PR is opened or reopened by any author listed in `AUTO_REVIEW_AUTHORS`, regardless of reviewer assignment.
 
 ### Policy resolution
 
-- Repo-specific: config/repos/<owner-repo>.yml
+- Repo-specific: config/repos/\<owner-repo\>.yml
 - Fallback: config/sentinel.yml
 
 ### Prompt resolution
 
-- Preferred: config/prompts/repos/<owner>/<repo>/
+- Preferred: config/prompts/repos/\<owner\>/\<repo\>/
 - Fallback: config/prompts/defaults/
 
 Prompt override lookup is exact-match only.
 
-## Learning and Exceptions
+## Audit and Exception Logging
 
-When EXCEPTION_REGISTRY_ISSUE_NUMBER is configured, accepted non-fix follow-up rationales are written to the configured issue in GITHUB_REPOSITORY.
+Two separate optional issue trackers are supported:
 
-If not configured, follow-up falls back to PR comments without central registry persistence.
+- **`EXCEPTION_REGISTRY_ISSUE_NUMBER`** — receives entries when a developer's non-fix rationale is accepted during follow-up. Used for exception learning.
+- **`AUDIT_ISSUE_NUMBER`** — receives a one-line entry after every sentinel pipeline run (action, status, PR, run URL). Used for operational audit trail.
+
+Both default to no-op if not configured.
 
 ## Safety and Governance
 
 - CI-aware approval and merge gating
 - Unresolved thread checks before approval and merge
 - Do-not-merge label support in merge flow
+- Self-filter prevents the bot from reviewing its own PRs
 - Local runtime state stored under .state/ and kept out of git tracking
 
 ## Repository Structure
 
-- .github/workflows/sentinel.yml: workflow orchestration
-- config/: policy and prompt configuration
-- scripts/: execution engine
-- tests/: shell-based test suite and payload fixtures
-- docs/: setup, troubleshooting, and decision references
+```
+.github/workflows/   workflow orchestration and scheduled check
+config/              policy and prompt configuration
+scripts/             execution engine
+  lib.sh             shared utilities (resolve_control_path, read_policy)
+tests/               shell-based test suite and payload fixtures
+docs/                setup, troubleshooting, and decision references
+```
 
 ## Documentation
 

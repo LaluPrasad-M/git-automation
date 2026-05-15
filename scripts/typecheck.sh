@@ -27,6 +27,7 @@ failures=0
 ts_detected=0
 yaml_lint_needed=0
 yaml_lint_files=()
+shellcheck_files=()
 
 fallback_yaml_lint() {
   local file first_non_comment first_line_num first_line line_num line line_len
@@ -97,9 +98,7 @@ for file in "${files[@]}"; do
     *.sh)
       echo "Type-check (shell syntax): $file"
       run_check "$file (bash -n)" bash -n "$file"
-      if command -v shellcheck >/dev/null 2>&1; then
-        run_check "$file (shellcheck)" shellcheck "$file"
-      fi
+      shellcheck_files+=("$file")
       ;;
     *.py)
       echo "Type-check (python compile): $file"
@@ -134,6 +133,19 @@ for file in "${files[@]}"; do
       ;;
   esac
 done
+
+if [[ "${#shellcheck_files[@]}" -gt 0 ]]; then
+  echo "Type-check (shell lint): shellcheck"
+  if command -v shellcheck >/dev/null 2>&1; then
+    run_check "shellcheck files" shellcheck "${shellcheck_files[@]}"
+  elif command -v docker >/dev/null 2>&1; then
+    echo "INFO: shellcheck not found locally; using Docker image koalaman/shellcheck:stable"
+    run_check "shellcheck files (docker)" docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:stable "${shellcheck_files[@]}"
+  else
+    echo "FAILED: shellcheck is required (install shellcheck or docker for fallback)" >&2
+    failures=1
+  fi
+fi
 
 if [[ "$yaml_lint_needed" -eq 1 ]]; then
   echo "Type-check (yaml lint): workflow/config files"

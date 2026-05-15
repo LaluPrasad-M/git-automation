@@ -4,7 +4,7 @@ SERVICE := sentinel-listener
 
 help:
 	@echo "Targets:"
-	@echo "  make run.      - start Docker listener and verify gh auth"
+	@echo "  make run       - start Docker listener and show startup logs"
 	@echo "  make build     - build Docker image"
 	@echo "  make up        - start listener container"
 	@echo "  make down      - stop listener container"
@@ -35,7 +35,9 @@ up: check-tools check-env
 
 run: check-tools check-env
 	docker compose up -d --build $(SERVICE)
-	@echo "Listener started. Use 'make logs' to follow logs."
+	@echo "Listener started. Recent logs:"
+	@docker compose logs --tail=20 $(SERVICE)
+	@echo "Use 'make logs' to follow continuously."
 
 git:
 	@command -v gh >/dev/null 2>&1 || (echo "gh CLI is required" && exit 1)

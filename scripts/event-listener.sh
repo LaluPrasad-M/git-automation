@@ -45,9 +45,30 @@ parse_target_repos() {
   tr ',' '\n' <<<"$raw" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | sed '/^$/d'
 }
 
+log_msg() {
+  local level="$1"
+  local event="$2"
+  shift 2
+
+  local ts
+  ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+  printf '%s level=%s component=listener event=%s' "$ts" "$level" "$event"
+  for kv in "$@"; do
+    printf ' %s' "$kv"
+  done
+  printf '\n'
+}
+
 poll_interval="${POLL_INTERVAL_SECONDS:-60}"
 state_dir="${STATE_DIR:-$workspace/.state/event-listener}"
 mkdir -p "$state_dir"
+
+log_msg INFO startup \
+  "status=started" \
+  "workspace=$workspace" \
+  "state_dir=$state_dir" \
+  "will_poll_every_seconds=$poll_interval"
 
 build_payload() {
   local event_json="$1"
@@ -130,11 +151,19 @@ build_payload() {
   esac
 }
 
+cycle=0
 while true; do
-  mapfile -t repos < <(parse_target_repos "$TARGET_REPOS_JSON")
+  cycle=$((cycle + 1))
+
+  repos=()
+  while IFS= read -r repo; do
+    repos+=("$repo")
+  done < <(parse_target_repos "$TARGET_REPOS_JSON")
 
   if [[ "${#repos[@]}" -eq 0 ]]; then
-    echo "No repositories found in TARGET_REPOS_JSON" >&2
+    log_msg ERROR no_repositories \
+      "cycle=$cycle" \
+      "target_repos_raw=${TARGET_REPOS_JSON}"
     sleep "$poll_interval"
     continue
   fi

@@ -3,7 +3,7 @@ set -euo pipefail
 
 _lib="$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 [[ -f "$_lib" ]] || { echo "lib.sh not found — ensure scripts/lib.sh is committed" >&2; exit 1; }
-# shellcheck source=lib.sh
+# shellcheck source=scripts/lib.sh
 source "$_lib"
 
 merge_method="$(read_policy 'merge.method')"
