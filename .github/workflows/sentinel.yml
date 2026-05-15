@@ -1,6 +1,7 @@
+---
 name: Claude Git Sentinel
 
-on:
+"on":
   repository_dispatch:
     types:
       - pr_notification
@@ -33,15 +34,22 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install deps
-        run: sudo snap install yq && sudo apt-get update && sudo apt-get install -y jq
+        run: |
+          sudo snap install yq
+          sudo apt-get update
+          sudo apt-get install -y jq
 
       - name: Classify Event
         id: classify
-        run: bash scripts/classify.sh '${{ toJSON(github.event.client_payload) }}'
+        run: |
+          bash scripts/classify.sh \
+            '${{ toJSON(github.event.client_payload) }}'
 
       - name: Resolve Policy
         id: policy
-        run: bash scripts/load-policy.sh '${{ steps.classify.outputs.target_repo }}'
+        run: |
+          bash scripts/load-policy.sh \
+            '${{ steps.classify.outputs.target_repo }}'
 
       - name: Safety Guards
         id: guard
@@ -57,10 +65,14 @@ jobs:
 
   auto-review:
     needs: classify
-    if: needs.classify.outputs.action == 'review' && needs.classify.outputs.should_skip != 'true'
+    if: >
+      needs.classify.outputs.action == 'review' &&
+      needs.classify.outputs.should_skip != 'true'
     runs-on: ubuntu-latest
     concurrency:
-      group: sentinel-${{ needs.classify.outputs.target_repo }}-${{ needs.classify.outputs.pr_number }}-review
+      group: >
+        sentinel-${{ needs.classify.outputs.target_repo }}-
+        ${{ needs.classify.outputs.pr_number }}-review
       cancel-in-progress: true
     env:
       TARGET_REPO: ${{ needs.classify.outputs.target_repo }}
@@ -70,7 +82,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install deps
-        run: sudo snap install yq && sudo apt-get update && sudo apt-get install -y jq
+        run: |
+          sudo snap install yq
+          sudo apt-get update
+          sudo apt-get install -y jq
       - name: Setup workspace
         run: bash scripts/setup-workspace.sh
       - name: Install Claude Code
@@ -82,21 +97,29 @@ jobs:
 
   auto-followup:
     needs: classify
-    if: needs.classify.outputs.action == 'followup' && needs.classify.outputs.should_skip != 'true'
+    if: >
+      needs.classify.outputs.action == 'followup' &&
+      needs.classify.outputs.should_skip != 'true'
     runs-on: ubuntu-latest
     concurrency:
-      group: sentinel-${{ needs.classify.outputs.target_repo }}-${{ needs.classify.outputs.pr_number }}-followup
+      group: >
+        sentinel-${{ needs.classify.outputs.target_repo }}-
+        ${{ needs.classify.outputs.pr_number }}-followup
       cancel-in-progress: true
     env:
       TARGET_REPO: ${{ needs.classify.outputs.target_repo }}
       PR_NUMBER: ${{ needs.classify.outputs.pr_number }}
       POLICY_FILE: ${{ needs.classify.outputs.policy_file }}
       PROMPT_DIR: ${{ needs.classify.outputs.prompt_dir }}
-      EXCEPTION_REGISTRY_ISSUE_NUMBER: ${{ vars.EXCEPTION_REGISTRY_ISSUE_NUMBER }}
+      EXCEPTION_REGISTRY_ISSUE_NUMBER: >-
+        ${{ vars.EXCEPTION_REGISTRY_ISSUE_NUMBER }}
     steps:
       - uses: actions/checkout@v4
       - name: Install deps
-        run: sudo snap install yq && sudo apt-get update && sudo apt-get install -y jq
+        run: |
+          sudo snap install yq
+          sudo apt-get update
+          sudo apt-get install -y jq
       - name: Setup workspace
         run: bash scripts/setup-workspace.sh
       - name: Install Claude Code
@@ -108,10 +131,14 @@ jobs:
 
   auto-approve:
     needs: classify
-    if: needs.classify.outputs.action == 'approve' && needs.classify.outputs.should_skip != 'true'
+    if: >
+      needs.classify.outputs.action == 'approve' &&
+      needs.classify.outputs.should_skip != 'true'
     runs-on: ubuntu-latest
     concurrency:
-      group: sentinel-${{ needs.classify.outputs.target_repo }}-${{ needs.classify.outputs.pr_number }}-approve
+      group: >
+        sentinel-${{ needs.classify.outputs.target_repo }}-
+        ${{ needs.classify.outputs.pr_number }}-approve
       cancel-in-progress: true
     env:
       TARGET_REPO: ${{ needs.classify.outputs.target_repo }}
@@ -121,7 +148,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install deps
-        run: sudo snap install yq && sudo apt-get update && sudo apt-get install -y jq
+        run: |
+          sudo snap install yq
+          sudo apt-get update
+          sudo apt-get install -y jq
       - name: Setup workspace
         run: bash scripts/setup-workspace.sh
       - name: Install Claude Code
@@ -133,10 +163,14 @@ jobs:
 
   auto-merge:
     needs: classify
-    if: needs.classify.outputs.action == 'merge' && needs.classify.outputs.should_skip != 'true'
+    if: >
+      needs.classify.outputs.action == 'merge' &&
+      needs.classify.outputs.should_skip != 'true'
     runs-on: ubuntu-latest
     concurrency:
-      group: sentinel-${{ needs.classify.outputs.target_repo }}-${{ needs.classify.outputs.pr_number }}-merge
+      group: >
+        sentinel-${{ needs.classify.outputs.target_repo }}-
+        ${{ needs.classify.outputs.pr_number }}-merge
       cancel-in-progress: true
     env:
       TARGET_REPO: ${{ needs.classify.outputs.target_repo }}
@@ -146,7 +180,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install deps
-        run: sudo snap install yq && sudo apt-get update && sudo apt-get install -y jq
+        run: |
+          sudo snap install yq
+          sudo apt-get update
+          sudo apt-get install -y jq
       - name: Setup workspace
         run: bash scripts/setup-workspace.sh
       - name: Install Claude Code
@@ -157,7 +194,12 @@ jobs:
         run: bash scripts/merge.sh
 
   notify:
-    needs: [classify, auto-review, auto-followup, auto-approve, auto-merge]
+    needs:
+      - classify
+      - auto-review
+      - auto-followup
+      - auto-approve
+      - auto-merge
     if: always()
     runs-on: ubuntu-latest
     env:
@@ -165,4 +207,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Notify
-        run: bash scripts/notify.sh '${{ needs.classify.outputs.action }}' '${{ job.status }}'
+        run: |
+          bash scripts/notify.sh \
+            '${{ needs.classify.outputs.action }}' \
+            '${{ job.status }}'

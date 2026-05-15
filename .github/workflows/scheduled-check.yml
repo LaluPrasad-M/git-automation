@@ -1,6 +1,7 @@
+---
 name: Scheduled PR Check
 
-on:
+"on":
   schedule:
     - cron: "*/15 * * * *"
   workflow_dispatch:
@@ -27,14 +28,17 @@ jobs:
             if echo "$raw" | jq -e 'type == "array"' >/dev/null 2>&1; then
               echo "$raw" | jq -r '.[]'
             else
-              echo "$raw" | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | sed '/^$/d'
+              echo "$raw" | tr ',' '\n' | \
+                sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | \
+                sed '/^$/d'
             fi
           }
           parse_repos "$TARGET_REPOS_JSON" | while read -r repo; do
             [ -z "$repo" ] && continue
 
+            search_query="review-requested:$MY_GITHUB_USERNAME state:open"
             gh pr list --repo "$repo" \
-              --search "review-requested:$MY_GITHUB_USERNAME state:open" \
+              --search "$search_query" \
               --json number,author \
               --jq '.[] | @base64' | while read -r row; do
                 [ -z "$row" ] && continue
