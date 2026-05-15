@@ -33,6 +33,8 @@ if [[ -z "$target_repo" || -z "$pr_number" ]]; then
   exit 1
 fi
 
+pr_url="https://github.com/$target_repo/pull/$pr_number"
+
 pr_json="$(gh pr view "$pr_number" --repo "$target_repo" --json author,state,title,reviewRequests 2>/dev/null || echo '{}')"
 pr_author="$(jq -r '.author.login // "unknown"' <<<"$pr_json")"
 pr_state="$(jq -r '.state // "unknown"' <<<"$pr_json")"
@@ -68,6 +70,7 @@ fi
   echo "pr_author=$pr_author"
   echo "pr_title=$pr_title"
   echo "target_repo=$target_repo"
+  echo "pr_url=$pr_url"
 } >> "$GITHUB_OUTPUT"
 
-echo "::notice::Classified $target_repo#$pr_number => $action"
+echo "::notice::Classified $target_repo#$pr_number => $action | pr_url=$pr_url"

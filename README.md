@@ -81,11 +81,18 @@ make git
 ### Useful operations
 
 ```bash
-make logs
-make ps
-make restart
-make down
-make test
+make build          # build Docker image
+make up             # start listener container (no rebuild)
+make run            # build + start + show startup logs
+make down           # stop listener container
+make restart        # stop then rebuild and start
+make logs           # follow listener logs
+make ps             # show container status
+make git            # verify gh CLI auth
+make test           # run shell test suite
+make typecheck      # type-check all tracked scripts
+make typecheck-staged  # type-check staged files only
+make install-hooks  # enable pre-commit hook via .githooks/
 ```
 
 ## Configuration Model
@@ -100,7 +107,7 @@ make test
 | `TARGET_REPOS_JSON` | Yes | Allow-list of repos the sentinel can act on |
 | `WORKSPACE` | Yes | Absolute path to this repo on your machine |
 | `GITHUB_REPOSITORY` | Yes | Control-plane repo for rate-limit checks and audit logging |
-| `AUTO_REVIEW_AUTHORS` | No | Comma-separated GitHub logins — PRs opened by these authors trigger review automatically without explicit reviewer assignment |
+| `AUTO_REVIEW_AUTHORS` | No | Author rules for auto-review. Supports `username1,username2` (global) and scoped rules like `all:username1,org/repo:username2,username3` |
 | `EXCEPTION_REGISTRY_ISSUE_NUMBER` | No | Issue number in `GITHUB_REPOSITORY` for exception-learning log (thread-followup) |
 | `AUDIT_ISSUE_NUMBER` | No | Issue number in `GITHUB_REPOSITORY` for pipeline run audit log (notify) |
 | `DRY_RUN` | No | Set to `true` to suppress all write operations — useful for testing |
@@ -126,7 +133,7 @@ TARGET_REPOS_JSON=Zipstorm/spot-v2,Zipstorm/other-repo
 The sentinel triggers a review when:
 
 1. **Reviewer assignment** — `MY_GITHUB_USERNAME` is explicitly added as a reviewer on a PR.
-2. **Author whitelist** — A PR is opened or reopened by any author listed in `AUTO_REVIEW_AUTHORS`, regardless of reviewer assignment.
+2. **Author rules** — A PR is opened or reopened by a matching author from `AUTO_REVIEW_AUTHORS`, regardless of reviewer assignment. Use global rules (`username1,username2`) or scoped rules (`all:username1,org/repo:username2,username3`).
 
 ### Policy resolution
 
