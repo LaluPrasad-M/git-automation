@@ -73,4 +73,4 @@ fi
   echo "pr_url=$pr_url"
 } >> "$GITHUB_OUTPUT"
 
-echo "::notice::Classified $target_repo#$pr_number => $action | pr_url=$pr_url"
+echo "::notice::Classified $target_repo#$pr_number => $action | $pr_url"
