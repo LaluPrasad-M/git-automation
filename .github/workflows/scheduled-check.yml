@@ -22,7 +22,15 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y jq
       - name: Dispatch review candidates
         run: |
-          echo "$TARGET_REPOS_JSON" | jq -r '.[]' | while read -r repo; do
+          parse_repos() {
+            local raw="$1"
+            if echo "$raw" | jq -e 'type == "array"' >/dev/null 2>&1; then
+              echo "$raw" | jq -r '.[]'
+            else
+              echo "$raw" | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | sed '/^$/d'
+            fi
+          }
+          parse_repos "$TARGET_REPOS_JSON" | while read -r repo; do
             [ -z "$repo" ] && continue
 
             gh pr list --repo "$repo" \

@@ -98,6 +98,8 @@ make test
 - GITHUB_REPOSITORY
 - EXCEPTION_REGISTRY_ISSUE_NUMBER (optional, recommended)
 
+For listener mode, TARGET_REPOS_JSON is the source of truth and can include multiple repositories. The listener scans each repo in that allow-list.
+
 ### Policy resolution
 
 - Repo-specific: config/repos/<owner-repo>.yml
@@ -138,6 +140,14 @@ If not configured, follow-up falls back to PR comments without central registry 
 - docs/decision-flows/review_and_approve.md
 - docs/decision-flows/reply_followup.md
 - docs/decision-flows/merge.md
+- docs/ROADMAP.md
+
+## Community
+
+- CONTRIBUTING.md
+- SECURITY.md
+- .github/ISSUE_TEMPLATE/bug_report.md
+- .github/ISSUE_TEMPLATE/feature_request.md
 
 ## Contributing
 

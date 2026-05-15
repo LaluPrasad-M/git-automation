@@ -6,6 +6,27 @@ if [[ $# -lt 1 ]]; then
   exit 2
 fi
 
+repo_in_allowlist() {
+  local repo="$1"
+  local raw="$2"
+
+  if jq -e 'type == "array"' >/dev/null 2>&1 <<<"$raw"; then
+    jq -e --arg repo "$repo" '.[] | select(. == $repo)' <<<"$raw" >/dev/null 2>&1
+    return $?
+  fi
+
+  while IFS= read -r item; do
+    item="${item#${item%%[![:space:]]*}}"
+    item="${item%${item##*[![:space:]]}}"
+    [[ -z "$item" ]] && continue
+    if [[ "$item" == "$repo" ]]; then
+      return 0
+    fi
+  done < <(tr ',' '\n' <<<"$raw")
+
+  return 1
+}
+
 target_repo="$1"
 repo_slug="${target_repo//\//-}"
 
@@ -21,7 +42,7 @@ if [[ ! -d "$prompt_dir" ]]; then
 fi
 
 if [[ -n "${TARGET_REPOS_JSON:-}" ]]; then
-  if ! jq -e --arg repo "$target_repo" '.[] | select(. == $repo)' <<<"$TARGET_REPOS_JSON" >/dev/null 2>&1; then
+  if ! repo_in_allowlist "$target_repo" "$TARGET_REPOS_JSON"; then
     echo "::error::Repo $target_repo is not allow-listed in TARGET_REPOS_JSON"
     exit 1
   fi

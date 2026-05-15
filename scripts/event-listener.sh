@@ -32,6 +32,19 @@ if [[ -z "${TARGET_REPOS_JSON:-}" ]]; then
   exit 1
 fi
 
+parse_target_repos() {
+  local raw="$1"
+
+  # Preferred format: JSON array, e.g. ["org/repo-a","org/repo-b"].
+  if jq -e 'type == "array"' >/dev/null 2>&1 <<<"$raw"; then
+    jq -r '.[]' <<<"$raw"
+    return 0
+  fi
+
+  # Backward-compatible format: comma-separated values.
+  tr ',' '\n' <<<"$raw" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | sed '/^$/d'
+}
+
 poll_interval="${POLL_INTERVAL_SECONDS:-60}"
 state_dir="${STATE_DIR:-$workspace/.state/event-listener}"
 mkdir -p "$state_dir"
@@ -118,7 +131,13 @@ build_payload() {
 }
 
 while true; do
-  mapfile -t repos < <(jq -r '.[]' <<<"$TARGET_REPOS_JSON")
+  mapfile -t repos < <(parse_target_repos "$TARGET_REPOS_JSON")
+
+  if [[ "${#repos[@]}" -eq 0 ]]; then
+    echo "No repositories found in TARGET_REPOS_JSON" >&2
+    sleep "$poll_interval"
+    continue
+  fi
 
   for repo in "${repos[@]}"; do
     [[ -z "$repo" ]] && continue

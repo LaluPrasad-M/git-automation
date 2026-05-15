@@ -1,4 +1,4 @@
-.PHONY: help run git build up down restart logs ps test check-tools check-env
+.PHONY: help run git build up down restart logs ps test typecheck typecheck-staged install-hooks check-tools check-env
 
 SERVICE := sentinel-listener
 
@@ -11,6 +11,9 @@ help:
 	@echo "  make restart   - restart listener container"
 	@echo "  make logs      - follow listener logs"
 	@echo "  make ps        - show container status"
+	@echo "  make typecheck - run type checks for all tracked files"
+	@echo "  make typecheck-staged - run type checks for staged files"
+	@echo "  make install-hooks - enable repository pre-commit hook"
 	@echo "  make test      - run local shell tests"
 
 check-tools:
@@ -56,3 +59,15 @@ test:
 	@./tests/test-guards.sh
 	@bash tests/test-merge-ci.sh
 	@./tests/test-integration.sh
+
+typecheck:
+	@bash scripts/typecheck.sh all
+
+typecheck-staged:
+	@bash scripts/typecheck.sh staged
+
+install-hooks:
+	@test -f .githooks/pre-commit || (echo ".githooks/pre-commit not found" && exit 1)
+	@chmod +x .githooks/pre-commit scripts/typecheck.sh
+	@git config core.hooksPath .githooks
+	@echo "Git hooks enabled via core.hooksPath=.githooks"

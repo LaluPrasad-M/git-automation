@@ -1,23 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-resolve_control_path() {
-  local p="$1"
-  if [[ "$p" = /* ]]; then
-    echo "$p"
-  else
-    echo "$GITHUB_WORKSPACE/$p"
-  fi
-}
-
-read_policy() {
-  local key="$1"
-  if [[ "$(yq e '.repo' "$POLICY_FILE" 2>/dev/null)" != "null" ]]; then
-    yq e ".$key // \"\"" "$POLICY_FILE"
-  else
-    yq e ".defaults.$key // \"\"" "$POLICY_FILE"
-  fi
-}
+_lib="$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+[[ -f "$_lib" ]] || { echo "lib.sh not found — ensure scripts/lib.sh is committed" >&2; exit 1; }
+# shellcheck source=lib.sh
+source "$_lib"
 
 merge_method="$(read_policy 'merge.method')"
 [[ -z "$merge_method" ]] && merge_method=squash

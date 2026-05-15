@@ -69,6 +69,8 @@ bash scripts/review.sh
 
 4. For multiple repositories, keep `TARGET_REPOS_JSON` as the full allow-list in `.env`, and change only `TARGET_REPO` (plus derived `POLICY_FILE` and `PROMPT_DIR`) per run.
 
+For Docker listener mode, you do not need to change `TARGET_REPO` per run. The listener continuously scans every repository listed in `TARGET_REPOS_JSON`.
+
 Notes:
 
 - `.env` is already ignored by git.
