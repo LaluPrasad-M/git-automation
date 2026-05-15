@@ -99,20 +99,20 @@ make install-hooks  # enable pre-commit hook via .githooks/
 
 ### Core env values for local mode
 
-| Variable | Required | Purpose |
-|---|---|---|
-| `GH_TOKEN` | Yes | GitHub API access |
-| `ANTHROPIC_API_KEY` | Yes | Claude API access |
-| `MY_GITHUB_USERNAME` | Yes | Bot account used for self-filter and thread resolution |
-| `TARGET_REPOS_JSON` | Yes | Allow-list of repos the sentinel can act on |
-| `WORKSPACE` | Yes | Absolute path to this repo on your machine |
-| `GITHUB_REPOSITORY` | Yes | Control-plane repo for rate-limit checks and audit logging |
-| `AUTO_REVIEW_AUTHORS` | No | Author rules for auto-review. Supports `username1,username2` (global) and scoped rules like `all:username1,org/repo:username2,username3` |
-| `EXCEPTION_REGISTRY_ISSUE_NUMBER` | No | Issue number in `GITHUB_REPOSITORY` for exception-learning log (thread-followup) |
-| `AUDIT_ISSUE_NUMBER` | No | Issue number in `GITHUB_REPOSITORY` for pipeline run audit log (notify) |
-| `DRY_RUN` | No | Set to `true` to suppress all write operations — useful for testing |
-| `MAX_ACTIONS_PER_HOUR` | No | Rate limit cap, default 20 |
-| `POLL_INTERVAL_SECONDS` | No | Listener poll interval, default 60 |
+| Variable                          | Required | Purpose                                                                                                                                  |
+| --------------------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `GH_TOKEN`                        | Yes      | GitHub API access                                                                                                                        |
+| `ANTHROPIC_API_KEY`               | Yes      | Claude API access                                                                                                                        |
+| `MY_GITHUB_USERNAME`              | Yes      | Bot account used for self-filter and thread resolution                                                                                   |
+| `TARGET_REPOS_JSON`               | Yes      | Allow-list of repos the sentinel can act on                                                                                              |
+| `WORKSPACE`                       | Yes      | Absolute path to this repo on your machine                                                                                               |
+| `GITHUB_REPOSITORY`               | Yes      | Control-plane repo for rate-limit checks and audit logging                                                                               |
+| `AUTO_REVIEW_AUTHORS`             | No       | Author rules for auto-review. Supports `username1,username2` (global) and scoped rules like `all:username1,org/repo:username2,username3` |
+| `EXCEPTION_REGISTRY_ISSUE_NUMBER` | No       | Issue number in `GITHUB_REPOSITORY` for exception-learning log (thread-followup)                                                         |
+| `AUDIT_ISSUE_NUMBER`              | No       | Issue number in `GITHUB_REPOSITORY` for pipeline run audit log (notify)                                                                  |
+| `DRY_RUN`                         | No       | Set to `true` to suppress all write operations — useful for testing                                                                      |
+| `MAX_ACTIONS_PER_HOUR`            | No       | Rate limit cap, default 20                                                                                                               |
+| `POLL_INTERVAL_SECONDS`           | No       | Listener poll interval, default 60                                                                                                       |
 
 `GITHUB_WORKSPACE` is auto-derived from `WORKSPACE` — no need to set it separately.
 
