@@ -12,7 +12,7 @@ resolve_control_path() {
 
 read_policy() {
   local key="$1"
-  if yq e '.repo' "$POLICY_FILE" >/dev/null 2>&1; then
+  if [[ "$(yq e '.repo' "$POLICY_FILE" 2>/dev/null)" != "null" ]]; then
     yq e ".$key // \"\"" "$POLICY_FILE"
   else
     yq e ".defaults.$key // \"\"" "$POLICY_FILE"

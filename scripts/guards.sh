@@ -37,7 +37,7 @@ fi
 
 enabled="true"
 if [[ -f "${POLICY_FILE:-}" ]]; then
-  if yq e '.repo' "${POLICY_FILE}" >/dev/null 2>&1; then
+  if [[ "$(yq e '.repo' "${POLICY_FILE}" 2>/dev/null)" != "null" ]]; then
     enabled="$(yq e ".${action}.enabled // true" "${POLICY_FILE}")"
   else
     enabled="$(yq e ".defaults.${action}.enabled // true" "${POLICY_FILE}")"

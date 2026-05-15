@@ -49,6 +49,8 @@ build_payload() {
       pr_number="$(jq -r '.payload.number // empty' <<<"$event_json")"
       if [[ -z "$pr_number" ]]; then return 1; fi
       if [[ "$action" == "review_requested" ]]; then
+        requested_login="$(jq -r '.payload.requested_reviewer.login // empty' <<<"$event_json")"
+        if [[ -n "${MY_GITHUB_USERNAME:-}" && "$requested_login" != "$MY_GITHUB_USERNAME" ]]; then return 1; fi
         jq -nc --arg repo "$repo" --arg pr "$pr_number" --arg t "review requested on PR #$pr_number" '{event_type:"pr_review_requested", client_payload:{target_repo:$repo, pr_number:$pr, feed_title:$t, action:"review", source:"docker-listener"}}'
         return 0
       fi

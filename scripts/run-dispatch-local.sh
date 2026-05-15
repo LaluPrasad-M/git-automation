@@ -35,7 +35,7 @@ guard_out="$tmp_dir/guard.out"
 policy_env="$tmp_dir/policy.env"
 
 export GITHUB_OUTPUT="$classify_out"
-bash scripts/classify.sh "$payload"
+bash scripts/classify.sh "$(jq -c '.client_payload // .' <<<"$payload")"
 
 action="$(grep -E '^action=' "$classify_out" | tail -n1 | cut -d= -f2-)"
 pr_number="$(grep -E '^pr_number=' "$classify_out" | tail -n1 | cut -d= -f2-)"
