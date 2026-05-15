@@ -42,7 +42,11 @@ pr_number="$(grep -E '^pr_number=' "$classify_out" | tail -n1 | cut -d= -f2-)"
 pr_author="$(grep -E '^pr_author=' "$classify_out" | tail -n1 | cut -d= -f2-)"
 target_repo="$(grep -E '^target_repo=' "$classify_out" | tail -n1 | cut -d= -f2-)"
 
-if [[ -z "$action" || "$action" == "unknown" || "$action" == "skip" ]]; then
+if [[ "$action" == "skip" ]]; then
+  exit 0
+fi
+
+if [[ -z "$action" || "$action" == "unknown" ]]; then
   echo "No runnable action for payload (action=${action:-empty})"
   exit 0
 fi

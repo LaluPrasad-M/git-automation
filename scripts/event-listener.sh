@@ -295,6 +295,13 @@ while true; do
       continue
     fi
 
+    # First time watching this repo: initialize checkpoint from current head event
+    # to avoid replaying historical backlog entries.
+    if [[ -z "$last_id" ]]; then
+      printf '%s' "$newest_id" > "$state_file"
+      continue
+    fi
+
     new_events_file="$(mktemp)"
     while IFS= read -r event; do
       event_id="$(jq -r '.id // ""' <<<"$event")"

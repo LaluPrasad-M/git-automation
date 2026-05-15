@@ -12,11 +12,21 @@ git config user.name "Claude Git Sentinel"
 git config user.email "${MY_GITHUB_USERNAME}@users.noreply.github.com"
 
 if [[ -n "${PR_NUMBER:-}" ]]; then
-  gh pr checkout "$PR_NUMBER" --repo "$TARGET_REPO" || {
-    head_ref="$(gh pr view "$PR_NUMBER" --repo "$TARGET_REPO" --json headRefName --jq '.headRefName')"
-    git fetch origin "$head_ref"
-    git checkout "$head_ref"
-  }
+  pr_checkout_branch="sentinel-pr-${PR_NUMBER}-head"
+
+  # Use pull/<number>/head so checkout works for both same-repo and fork PRs.
+  if git fetch --depth=1 origin "pull/${PR_NUMBER}/head:${pr_checkout_branch}"; then
+    git checkout "$pr_checkout_branch"
+  else
+    # Fallback to detached checkout by head SHA when pull ref fetch is unavailable.
+    head_sha="$(gh pr view "$PR_NUMBER" --repo "$TARGET_REPO" --json headRefOid --jq '.headRefOid // empty')"
+    if [[ -z "$head_sha" ]]; then
+      echo "Unable to resolve PR head SHA for ${TARGET_REPO}#${PR_NUMBER}" >&2
+      exit 1
+    fi
+    git fetch --depth=1 origin "$head_sha"
+    git checkout --detach FETCH_HEAD
+  fi
 fi
 
 echo "WORKSPACE=$work_dir/target" >> "$GITHUB_ENV"
