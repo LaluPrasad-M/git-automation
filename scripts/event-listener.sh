@@ -54,6 +54,18 @@ build_payload() {
         jq -nc --arg repo "$repo" --arg pr "$pr_number" --arg t "review requested on PR #$pr_number" '{event_type:"pr_review_requested", client_payload:{target_repo:$repo, pr_number:$pr, feed_title:$t, action:"review", source:"docker-listener"}}'
         return 0
       fi
+      if [[ "$action" == "opened" || "$action" == "reopened" ]]; then
+        if [[ -n "${AUTO_REVIEW_AUTHORS:-}" ]]; then
+          pr_author="$(jq -r '.payload.pull_request.user.login // empty' <<<"$event_json")"
+          IFS=',' read -ra whitelist <<< "$AUTO_REVIEW_AUTHORS"
+          for author in "${whitelist[@]}"; do
+            if [[ "$pr_author" == "${author// /}" ]]; then
+              jq -nc --arg repo "$repo" --arg pr "$pr_number" --arg t "review requested on PR #$pr_number" '{event_type:"pr_review_requested", client_payload:{target_repo:$repo, pr_number:$pr, feed_title:$t, action:"review", source:"docker-listener"}}'
+              return 0
+            fi
+          done
+        fi
+      fi
       return 1
       ;;
     PullRequestReviewEvent)
