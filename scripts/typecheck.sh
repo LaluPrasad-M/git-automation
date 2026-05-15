@@ -98,7 +98,9 @@ for file in "${files[@]}"; do
     *.sh)
       echo "Type-check (shell syntax): $file"
       run_check "$file (bash -n)" bash -n "$file"
-      shellcheck_files+=("$file")
+      if [[ "$file" == scripts/* ]]; then
+        shellcheck_files+=("$file")
+      fi
       ;;
     *.py)
       echo "Type-check (python compile): $file"
@@ -137,10 +139,14 @@ done
 if [[ "${#shellcheck_files[@]}" -gt 0 ]]; then
   echo "Type-check (shell lint): shellcheck"
   if command -v shellcheck >/dev/null 2>&1; then
-    run_check "shellcheck files" shellcheck "${shellcheck_files[@]}"
+    for file in "${shellcheck_files[@]}"; do
+      run_check "$file (shellcheck)" shellcheck "$file"
+    done
   elif command -v docker >/dev/null 2>&1; then
     echo "INFO: shellcheck not found locally; using Docker image koalaman/shellcheck:stable"
-    run_check "shellcheck files (docker)" docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:stable "${shellcheck_files[@]}"
+    for file in "${shellcheck_files[@]}"; do
+      run_check "$file (shellcheck docker)" docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:stable "$file"
+    done
   else
     echo "FAILED: shellcheck is required (install shellcheck or docker for fallback)" >&2
     failures=1

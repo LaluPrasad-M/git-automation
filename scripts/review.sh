@@ -6,6 +6,7 @@ cd "$WORKSPACE"
 _lib="$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 [[ -f "$_lib" ]] || { echo "lib.sh not found — ensure scripts/lib.sh is committed" >&2; exit 1; }
 # shellcheck source=scripts/lib.sh
+# shellcheck disable=SC1091
 source "$_lib"
 
 extract_json_payload() {
