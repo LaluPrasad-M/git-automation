@@ -127,7 +127,7 @@ while true; do
     last_id=""
     [[ -f "$state_file" ]] && last_id="$(cat "$state_file")"
 
-    events_json="$(GH_PAGER=cat gh api "repos/$repo/events?per_page=100" 2>/dev/null || echo '[]')"
+    events_json="$(env GH_PAGER=cat gh api "repos/$repo/events?per_page=100" 2>/dev/null || echo '[]')"
     newest_id="$(jq -r '.[0].id // ""' <<<"$events_json")"
 
     if [[ -z "$newest_id" ]]; then

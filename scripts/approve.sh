@@ -33,7 +33,7 @@ fi
 
 owner="${TARGET_REPO%/*}"
 repo="${TARGET_REPO#*/}"
-threads_query='query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100){nodes{isResolved comments(first:50){nodes{body author{login}}}}}}}}'
+threads_query="query(\$owner:String!,\$name:String!,\$number:Int!){repository(owner:\$owner,name:\$name){pullRequest(number:\$number){reviewThreads(first:100){nodes{isResolved comments(first:50){nodes{body author{login}}}}}}}}"
 threads_json="$(gh api graphql -f query="$threads_query" -F owner="$owner" -F name="$repo" -F number="$PR_NUMBER")"
 open_sentinel_threads="$(jq -r --arg bot "$MY_GITHUB_USERNAME" '[
   .data.repository.pullRequest.reviewThreads.nodes[]?

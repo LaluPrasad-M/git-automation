@@ -16,6 +16,9 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# Parsed for compatibility with callers that always pass PR context.
+[[ -n "$pr_number" ]] && :
+
 should_skip="false"
 
 if [[ -n "$pr_author" && -n "$bot_user" && "$pr_author" == "$bot_user" ]]; then

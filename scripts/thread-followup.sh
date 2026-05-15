@@ -27,7 +27,7 @@ extract_json_payload() {
 is_positive_reply() {
   local text="$1"
   shopt -s nocasematch
-  if [[ "$text" =~ (won't|wont|cannot|can't|partial|later|defer|not\ fix|decline|won.?t\ fix) ]]; then
+  if [[ "$text" =~ (won\'t|wont|cannot|can\'t|partial|later|defer|not\ fix|decline|won.?t\ fix) ]]; then
     shopt -u nocasematch
     return 1
   fi
@@ -52,7 +52,7 @@ post_thread_reply() {
 resolve_thread() {
   local thread_id="$1"
   gh api graphql \
-    -f query='mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{id isResolved}}}' \
+    -f query="mutation(\$threadId:ID!){resolveReviewThread(input:{threadId:\$threadId}){thread{id isResolved}}}" \
     -F threadId="$thread_id" >/dev/null
 }
 
@@ -75,7 +75,7 @@ learning: $learning" >/dev/null
   fi
 }
 
-threads_query='query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100){nodes{id isResolved path comments(first:50){nodes{id databaseId body author{login} createdAt}}}}}}}'
+threads_query="query(\$owner:String!,\$name:String!,\$number:Int!){repository(owner:\$owner,name:\$name){pullRequest(number:\$number){reviewThreads(first:100){nodes{id isResolved path comments(first:50){nodes{id databaseId body author{login} createdAt}}}}}}}"
 threads_json="$(gh api graphql -f query="$threads_query" -F owner="$owner" -F name="$repo" -F number="$PR_NUMBER")"
 
 candidates="$(jq -c --arg bot "$bot_user" '
