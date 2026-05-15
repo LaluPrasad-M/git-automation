@@ -35,12 +35,12 @@ Claude Git Sentinel is built to solve that gap:
 
 ## Supported Actions
 
-| Action | Purpose |
-|---|---|
-| review | Generate structured review findings |
-| followup | Process replies on unresolved sentinel threads |
-| approve | Approve only when policy and quality gates pass |
-| merge | Merge only when policy and safety checks pass |
+| Action   | Purpose                                         |
+| -------- | ----------------------------------------------- |
+| review   | Generate structured review findings             |
+| followup | Process replies on unresolved sentinel threads  |
+| approve  | Approve only when policy and quality gates pass |
+| merge    | Merge only when policy and safety checks pass   |
 
 ## How It Works
 
