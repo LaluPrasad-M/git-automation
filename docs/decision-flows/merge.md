@@ -3,7 +3,7 @@
 ## Entry Conditions
 
 1. `PullRequestReviewEvent` with state `APPROVED` is detected by the event listener.
-2. Classifier sets `action=merge` in [scripts/classify.sh](../../scripts/classify.sh).
+2. Classifier sets `action=merge` in `scripts/pipeline/classify.sh`.
 3. Guards evaluate. Merge is skipped unless **PR author == `MY_GITHUB_USERNAME`**.
 
 The merge flow only acts on your own PRs. PRs authored by others are skipped at the guard stage regardless of who approved them.
@@ -39,4 +39,4 @@ When all gates pass, the sentinel posts a comment and merges using the configure
 
 ## Policy Source
 
-Default merge policy is defined in [config/sentinel.yml](../../config/sentinel.yml) and can be overridden per repository in [config/repos](../../config/repos).
+Default merge policy is defined in [config/sentinel.yml](../../config/sentinel.yml) and can be overridden per repository in `git-listeners/<owner>/<repo>/policy.yml`.

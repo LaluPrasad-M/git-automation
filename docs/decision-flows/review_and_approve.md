@@ -11,7 +11,7 @@ A review runs when `MY_GITHUB_USERNAME` is added as a reviewer on a PR, or when 
 ### Execution Order
 
 ```
-classify → guards (skip own PRs) → policy → review.sh (clone → diff check → Claude → post findings)
+classify → guards (self-filter) → reviewer/whitelist check → policy → review.sh (clone → diff check → Claude → post findings)
 ```
 
 ### Hard Gates
@@ -24,15 +24,15 @@ classify → guards (skip own PRs) → policy → review.sh (clone → diff chec
 ### What Happens
 
 1. Check reviewer/whitelist eligibility via GitHub API.
-2. Clone target repo if not already present, otherwise fetch latest (reuses existing workspace).
+2. Clone target repo if not already present, otherwise fetch latest.
 3. Check diff size against policy limit.
-3. Fetch PR metadata (title, author, file count, additions, deletions).
-4. Build review prompt from repo-specific or default template, inject PR metadata.
-5. Append optional skill files from `<PROMPT_DIR>/review/` if present.
-6. Call Claude with tools: `gh, git, cat, grep, find, head, tail, wc` (max 10 turns).
-7. Parse JSON response: `summary`, `verdict`, `test_gaps`, `findings[]`.
-8. Post each finding as an inline PR comment (path + line) where possible; fall back to summary comment.
-9. Apply severity policy:
+4. Fetch PR metadata (title, author, file count, additions, deletions).
+5. Load review instructions from `git-listeners/<owner>/<repo>/prompts/review/review.md` → fallback `config/prompts/defaults/review/review.md`.
+6. If skill files exist in `git-listeners/<owner>/<repo>/prompts/review/`, list them with descriptions. Claude reads only the ones relevant to the changed files using `cat`.
+7. Call Claude with tools: `gh, git, cat, grep, find, head, tail, wc` (max 10 turns).
+8. Parse JSON response: `summary`, `verdict`, `test_gaps`, `findings[]`.
+9. Post each finding as an inline PR comment (path + line) where possible; fall back to summary comment.
+10. Apply severity policy:
    - Any `critical` finding → `REQUEST_CHANGES`
    - Only `major` findings → comment-only (no block, no approval)
    - No critical or major → approve
@@ -77,9 +77,10 @@ classify → guards (skip own PRs) → policy → approve.sh (API checks only, n
 2. Check all CI checks pass.
 3. Query review threads via GraphQL, check for unresolved sentinel threads.
 4. Validate required checks are present.
-5. Build approve prompt from repo-specific or default template.
-6. Call Claude with tools: `gh, git, cat, grep` (max 6 turns).
-7. Apply decision:
+5. Load approve instructions from `git-listeners/<owner>/<repo>/prompts/approve/approve.md` → fallback `config/prompts/defaults/approve/approve.md`.
+6. If skill files exist in `git-listeners/<owner>/<repo>/prompts/approve/`, list them with descriptions. Claude reads relevant ones using `cat`.
+7. Call Claude with tools: `gh, git, cat, grep` (max 6 turns).
+8. Apply decision:
    - `DECISION: APPROVE` → post GitHub approval review
    - `DECISION: COMMENT - <reason>` → post non-blocking comment, leave PR unapproved
    - `DECISION: BLOCK - <reason>` → post blocking comment

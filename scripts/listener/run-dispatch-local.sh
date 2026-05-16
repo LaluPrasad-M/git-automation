@@ -9,7 +9,7 @@ fi
 payload="$1"
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-repo_root="$(cd "$script_dir/.." && pwd)"
+repo_root="$(cd "$script_dir/../.." && pwd)"
 workspace="${WORKSPACE:-$repo_root}"
 
 if [[ ! -d "$workspace" ]]; then
@@ -35,7 +35,7 @@ guard_out="$tmp_dir/guard.out"
 policy_env="$tmp_dir/policy.env"
 
 export GITHUB_OUTPUT="$classify_out"
-bash scripts/classify.sh "$(jq -c '.client_payload // .' <<<"$payload")"
+bash scripts/pipeline/classify.sh "$(jq -c '.client_payload // .' <<<"$payload")"
 
 action="$(grep -E '^action=' "$classify_out" | tail -n1 | cut -d= -f2-)"
 pr_number="$(grep -E '^pr_number=' "$classify_out" | tail -n1 | cut -d= -f2-)"
@@ -53,7 +53,7 @@ if [[ -z "$action" || "$action" == "unknown" ]]; then
 fi
 
 export GITHUB_OUTPUT="$guard_out"
-bash scripts/guards.sh \
+bash scripts/pipeline/guards.sh \
   --author "$pr_author" \
   --bot-user "${MY_GITHUB_USERNAME:-}" \
   --action "$action" \
@@ -86,7 +86,7 @@ fi
 
 export GITHUB_OUTPUT="$policy_out"
 export GITHUB_ENV="$policy_env"
-bash scripts/load-policy.sh "$target_repo"
+bash scripts/pipeline/load-policy.sh "$target_repo"
 
 policy_file="$(grep -E '^policy_file=' "$policy_out" | tail -n1 | cut -d= -f2-)"
 prompt_dir="$(grep -E '^prompt_dir=' "$policy_out" | tail -n1 | cut -d= -f2-)"
@@ -112,16 +112,16 @@ export PROMPT_DIR="$prompt_dir"
 
 case "$action" in
   review)
-    bash scripts/review.sh
+    bash scripts/actions/review.sh
     ;;
   followup)
-    bash scripts/thread-followup.sh
+    bash scripts/actions/thread-followup.sh
     ;;
   approve)
-    bash scripts/approve.sh
+    bash scripts/actions/approve.sh
     ;;
   merge)
-    bash scripts/merge.sh
+    bash scripts/actions/merge.sh
     ;;
   *)
     echo "Unsupported action: $action"

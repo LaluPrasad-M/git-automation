@@ -31,7 +31,8 @@ defaults:
     require_claude_review: true
     ci_check_timeout_minutes: 30
     ci_poll_interval_seconds: 60
-    required_checks: []
+    required_checks:
+      - ci
   merge:
     enabled: true
     method: squash

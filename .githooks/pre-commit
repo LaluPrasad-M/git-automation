@@ -4,4 +4,4 @@ set -euo pipefail
 repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root"
 
-bash scripts/typecheck.sh staged
+bash scripts/shared/typecheck.sh staged

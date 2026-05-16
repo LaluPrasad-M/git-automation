@@ -1,4 +1,4 @@
-.PHONY: help run git build up down restart logs ps test typecheck typecheck-staged install-hooks check-tools check-env
+.PHONY: help run git-auth-check build up down restart logs ps test typecheck typecheck-staged install-hooks check-tools check-env init
 
 SERVICE := sentinel-listener
 
@@ -15,6 +15,7 @@ help:
 	@echo "  make typecheck-staged - run type checks for staged files"
 	@echo "  make install-hooks - enable repository pre-commit hook"
 	@echo "  make test      - run local shell tests"
+	@echo "  make init      - scaffold config and prompts for repos in TARGET_REPOS"
 
 check-tools:
 	@command -v docker >/dev/null 2>&1 || (echo "docker is required" && exit 1)
@@ -25,7 +26,7 @@ check-env:
 	@grep -Eq '^GH_TOKEN=.+' .env || (echo "GH_TOKEN is missing in .env" && exit 1)
 	@grep -Eq '^ANTHROPIC_API_KEY=.+' .env || (echo "ANTHROPIC_API_KEY is missing in .env" && exit 1)
 	@grep -Eq '^MY_GITHUB_USERNAME=.+' .env || (echo "MY_GITHUB_USERNAME is missing in .env" && exit 1)
-	@grep -Eq '^TARGET_REPOS_JSON=.+' .env || (echo "TARGET_REPOS_JSON is missing in .env" && exit 1)
+	@grep -Eq '^TARGET_REPOS=.+' .env || (echo "TARGET_REPOS is missing in .env" && exit 1)
 
 build: check-tools check-env
 	docker compose build $(SERVICE)
@@ -39,7 +40,7 @@ run: check-tools check-env
 	@docker compose logs --tail=20 $(SERVICE)
 	@echo "Use 'make logs' to follow continuously."
 
-git:
+git-auth-check:
 	@command -v gh >/dev/null 2>&1 || (echo "gh CLI is required" && exit 1)
 	@GH_PAGER=cat gh auth status >/dev/null 2>&1 || (echo "gh auth not ready. Run 'gh auth login'." && exit 1)
 	@echo "gh auth is ready"
@@ -56,7 +57,7 @@ ps: check-tools
 	docker compose ps
 
 test:
-	@for f in scripts/*.sh tests/*.sh; do bash -n "$$f" || exit 1; done
+	@for f in scripts/actions/*.sh scripts/pipeline/*.sh scripts/listener/*.sh scripts/shared/*.sh tests/*.sh; do bash -n "$$f" || exit 1; done
 	@PATH="$(CURDIR)/tests/stubs:$$PATH" ANTHROPIC_API_KEY="" \
 	  ./tests/test-classify.sh && \
 	  PATH="$(CURDIR)/tests/stubs:$$PATH" ANTHROPIC_API_KEY="" \
@@ -67,13 +68,16 @@ test:
 	  ./tests/test-integration.sh
 
 typecheck:
-	@bash scripts/typecheck.sh all
+	@bash scripts/shared/typecheck.sh all
 
 typecheck-staged:
-	@bash scripts/typecheck.sh staged
+	@bash scripts/shared/typecheck.sh staged
 
 install-hooks:
 	@test -f .githooks/pre-commit || (echo ".githooks/pre-commit not found" && exit 1)
-	@chmod +x .githooks/pre-commit scripts/typecheck.sh
+	@chmod +x .githooks/pre-commit scripts/shared/typecheck.sh
 	@git config core.hooksPath .githooks
 	@echo "Git hooks enabled via core.hooksPath=.githooks"
+
+init: check-env
+	@set -a && . ./.env && set +a && bash scripts/shared/init-repo.sh

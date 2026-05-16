@@ -12,7 +12,7 @@ permissions:
 env:
   GH_TOKEN: ${{ secrets.MY_PAT }}
   MY_GITHUB_USERNAME: ${{ vars.MY_GITHUB_USERNAME }}
-  TARGET_REPOS_JSON: ${{ vars.TARGET_REPOS_JSON }}
+  TARGET_REPOS: ${{ vars.TARGET_REPOS }}
 
 jobs:
   dispatch-pending:
@@ -23,17 +23,10 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y jq
       - name: Dispatch review candidates
         run: |
-          parse_repos() {
-            local raw="$1"
-            if echo "$raw" | jq -e 'type == "array"' >/dev/null 2>&1; then
-              echo "$raw" | jq -r '.[]'
-            else
-              echo "$raw" | tr ',' '\n' | \
-                sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | \
-                sed '/^$/d'
-            fi
-          }
-          parse_repos "$TARGET_REPOS_JSON" | while read -r repo; do
+          tr ',' '\n' <<<"$TARGET_REPOS" \
+            | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' \
+            | sed '/^$/d' \
+            | while read -r repo; do
             [ -z "$repo" ] && continue
 
             search_query="review-requested:$MY_GITHUB_USERNAME state:open"

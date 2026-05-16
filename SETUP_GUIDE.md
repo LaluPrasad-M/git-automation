@@ -2,114 +2,107 @@
 
 ## 1. Prerequisites
 
-- GitHub CLI (`gh`) access
-- Private control repository
+- Docker and Docker Compose
+- GitHub CLI (`gh`) authenticated
 - Fine-grained PAT with repo write access to each managed repo
 - Anthropic API key
 
-## 2. Configure secrets
-
-- `MY_PAT`
-- `ANTHROPIC_API_KEY`
-- `NOTIFICATION_FEED_URL`
-
-## 3. Configure variables
-
-- `MY_GITHUB_USERNAME`
-- `TARGET_REPOS_JSON` as JSON array, for example:
-  - `["Zipstorm/spot-v2"]`
-- Optional: `EXCEPTION_REGISTRY_ISSUE_NUMBER` for storing accepted follow-up rationale as persistent learning entries
-
-## 4. Configure policies
-
-- Set defaults in `config/sentinel.yml`
-- Add repo-specific files in `config/repos/`
-- Optionally add prompt overrides in `config/prompts/repos/<owner>/<repo>/`
-- Prompt overrides are exact-match only; if no exact directory exists, `config/prompts/defaults/` is used
-
-## 5. Validate
-
-- Run workflow: `Self Test`
-- Manually dispatch an event with `target_repo` and `pr_number`
-
-## 6. Enable bridge
-
-- Configure Zapier/IFTTT RSS trigger
-- POST to `repos/{owner}/{control_repo}/dispatches`
-- Include `client_payload.target_repo` in the webhook body
-
-## 7. Local .env setup (no repo settings access)
-
-If you cannot set GitHub Actions secrets/variables in the control repo, run locally with a `.env` file.
-
-1. Copy `.env.example` to `.env` and fill values.
-2. Load variables into your shell:
+## 2. Clone and configure
 
 ```bash
-set -a
-source .env
-set +a
+git clone https://github.com/your-username/git-automation
+cd git-automation
+cp .env.example .env
 ```
 
-3. Run scripts directly, for example:
+Fill in `.env`:
+
+| Variable | Required | Description |
+|---|---|---|
+| `GH_TOKEN` | Yes | GitHub PAT with repo write access |
+| `ANTHROPIC_API_KEY` | Yes | Anthropic API key |
+| `MY_GITHUB_USERNAME` | Yes | Your GitHub username |
+| `TARGET_REPOS` | Yes | Comma-separated repos to watch, e.g. `owner/repo,owner/repo2` |
+| `WORKSPACE` | Yes | Absolute path to this repo on your machine |
+| `GITHUB_REPOSITORY` | Yes | This control repo in `owner/repo` format |
+
+## 3. Scaffold per-repo config
 
 ```bash
-export PR_NUMBER=751
-export TARGET_REPO=Zipstorm/spot-v2
-repo_slug="${TARGET_REPO//\//-}"
-export POLICY_FILE="config/repos/${repo_slug}.yml"
-if [ ! -f "$POLICY_FILE" ]; then export POLICY_FILE="config/sentinel.yml"; fi
-export PROMPT_DIR="config/prompts/repos/${TARGET_REPO}"
-if [ ! -d "$PROMPT_DIR" ]; then export PROMPT_DIR="config/prompts/defaults"; fi
-export WORKSPACE="$PWD"
-export GITHUB_WORKSPACE="$PWD"
-bash scripts/setup-workspace.sh
-bash scripts/review.sh
+make init
 ```
 
-4. For multiple repositories, keep `TARGET_REPOS_JSON` as the full allow-list in `.env`, and change only `TARGET_REPO` (plus derived `POLICY_FILE` and `PROMPT_DIR`) per run.
+This reads `TARGET_REPOS` from `.env` and creates for each repo:
 
-For Docker listener mode, you do not need to change `TARGET_REPO` per run. The listener continuously scans every repository listed in `TARGET_REPOS_JSON`.
-
-Notes:
-
-- `.env` is already ignored by git.
-- Keep `.env.example` as the non-secret template.
-
-## 8. Docker 24/7 listener mode (no Zapier/IFTTT)
-
-Run a long-lived container that polls GitHub repo events and executes local review/follow-up/approve/merge flows.
-
-1. Ensure `.env` is populated.
-2. For Docker mode, set `GH_TOKEN` in `.env` (container cannot use your host keychain `gh auth` session).
-3. Docker mode uses `/app` as workspace inside the container (host absolute paths are ignored).
-4. Start listener:
-
-```bash
-docker compose up -d --build
+```
+git-listeners/
+└── owner/
+    └── repo/
+        ├── policy.yml       ← override defaults from config/sentinel.yml
+        └── prompts/
+            ├── review/      ← drop skill files here (e.g. frontend-reviewer.md)
+            └── approve/     ← drop skill files here
 ```
 
-Or use the Makefile shortcut:
+`git-listeners/` is gitignored — your configs stay local. Re-running `make init` is safe; existing files are never overwritten.
+
+## 4. Customise
+
+### Policy
+
+Edit `git-listeners/<owner>/<repo>/policy.yml` to override defaults — diff size limit, required CI checks, merge method, min approvals, etc.
+
+### Review and approve instructions
+
+By default `config/prompts/defaults/review/review.md` and `config/prompts/defaults/approve/approve.md` are used. To override for a specific repo, create:
+
+```
+git-listeners/<owner>/<repo>/prompts/review/review.md
+git-listeners/<owner>/<repo>/prompts/approve/approve.md
+```
+
+### Skill files
+
+Skill files define domain-specific review checklists (e.g. React, Python, security). Drop them in the repo's `prompts/review/` folder:
+
+```
+git-listeners/<owner>/<repo>/prompts/review/
+├── frontend-reviewer.md
+├── python-reviewer.md
+└── review-security.md
+```
+
+Each skill file should have a `description:` line near the top — Claude uses this to decide which skills are relevant before reading them:
+
+```markdown
+description: Expert frontend reviewer for React and TypeScript changes
+```
+
+Claude reads the diff first, then reads only the skill files relevant to what changed.
+
+## 5. Start the listener
 
 ```bash
 make run
 ```
 
-5. View logs:
+The listener polls GitHub Events API for each repo in `TARGET_REPOS` and triggers review, follow-up, approve, or merge flows automatically.
 
 ```bash
-docker compose logs -f sentinel-listener
+make logs      # follow logs
+make restart   # restart after config changes
+make down      # stop
 ```
 
-6. Stop listener:
+## 6. Validate
 
 ```bash
-docker compose down
+make test      # run shell test suite (no API calls)
+make git-auth-check      # verify gh CLI auth
 ```
 
-Implementation files:
+## 7. Add more repos
 
-- `scripts/event-listener.sh` (poller)
-- `scripts/run-dispatch-local.sh` (local dispatcher)
-- `Dockerfile`
-- `docker-compose.yml`
+1. Add the repo to `TARGET_REPOS` in `.env`
+2. Run `make init` — scaffolds config only for repos that don't have it yet
+3. Restart the listener: `make restart`

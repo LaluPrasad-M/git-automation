@@ -7,7 +7,7 @@
 
 ## Repo rejected by policy loader
 
-- Ensure the repo exists in `TARGET_REPOS_JSON`.
+- Ensure the repo exists in `TARGET_REPOS`.
 - Ensure repo format is `owner/repo`.
 
 ## Auto-approve never happens

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-_lib="$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+_lib="$(dirname "${BASH_SOURCE[0]}")/../shared/lib.sh"
 [[ -f "$_lib" ]] || { echo "lib.sh not found — ensure scripts/lib.sh is committed" >&2; exit 1; }
 # shellcheck source=scripts/lib.sh
 # shellcheck disable=SC1091
@@ -55,7 +55,7 @@ severity_label() {
   esac
 }
 
-bash "$(dirname "${BASH_SOURCE[0]}")/setup-workspace.sh"
+bash "$(dirname "${BASH_SOURCE[0]}")/../shared/setup-workspace.sh"
 _new_ws="$(grep '^WORKSPACE=' "${GITHUB_ENV:-/dev/null}" | tail -1 | cut -d= -f2-)"
 [[ -n "$_new_ws" ]] && { export WORKSPACE="$_new_ws"; cd "$WORKSPACE"; }
 
@@ -83,9 +83,7 @@ prompt_root="$(resolve_control_path "$PROMPT_DIR")"
 default_prompt_root="$GITHUB_WORKSPACE/config/prompts/defaults"
 
 template_file="$prompt_root/review/review.md"
-[[ ! -f "$template_file" ]] && template_file="$prompt_root/review.md"
 [[ ! -f "$template_file" ]] && template_file="$default_prompt_root/review/review.md"
-[[ ! -f "$template_file" ]] && template_file="$default_prompt_root/review.md"
 
 prompt="$(cat "$template_file")"
 prompt="${prompt//\{\{PR_NUMBER\}\}/$PR_NUMBER}"
@@ -96,34 +94,21 @@ prompt="${prompt//\{\{FILES_CHANGED\}\}/$files_changed}"
 prompt="${prompt//\{\{LINES_ADDED\}\}/$lines_added}"
 prompt="${prompt//\{\{LINES_REMOVED\}\}/$lines_removed}"
 
-skills_dir="$prompt_root/review"
-if [[ ! -d "$skills_dir" ]]; then
-  skills_dir="$default_prompt_root/review"
-fi
+repo_skills_dir="$prompt_root/review"
+if [[ -d "$repo_skills_dir" ]]; then
+  skill_manifest=""
+  while IFS= read -r skill_file; do
+    [[ -z "$skill_file" ]] && continue
+    skill_name="$(basename "$skill_file")"
+    description="$(sed -n 's/^description:[[:space:]]*//p' "$skill_file" | head -1 | tr -d '"')"
+    [[ -z "$description" ]] && description="$skill_name"
+    skill_manifest+="- $skill_name: $description"$'\n'
+  done < <(find "$repo_skills_dir" -maxdepth 1 -type f ! -name 'review.md' | sort)
 
-skills_index_file="$skills_dir/index.md"
-skills_file_list=""
-if [[ -d "$skills_dir" ]]; then
-  skills_file_list="$(find "$skills_dir" -maxdepth 1 -type f ! -name 'index.md' -exec basename {} \; | sort)"
-fi
-
-if [[ -f "$skills_index_file" || -n "$skills_file_list" ]]; then
-  prompt+=$'\n\n## Optional Review Skills\n'
-  prompt+=$'You may choose any, all, or none of these skills based on relevance to this PR.\n'
-
-  if [[ -f "$skills_index_file" ]]; then
-    prompt+=$'\n### Skills Guidance\n'
-    prompt+="$(cat "$skills_index_file")"
-    prompt+=$'\n'
-  fi
-
-  if [[ -n "$skills_file_list" ]]; then
-    prompt+=$'\n### Available Skill Files\n'
-    while IFS= read -r skill_file; do
-      [[ -z "$skill_file" ]] && continue
-      prompt+="- $skill_file"
-      prompt+=$'\n'
-    done <<< "$skills_file_list"
+  if [[ -n "$skill_manifest" ]]; then
+    prompt+=$'\n\n## Available Skill Files\n'
+    prompt+="Read only the skill files relevant to the files changed in this PR. Use \`cat\` to read them from: $repo_skills_dir/"$'\n'
+    prompt+="$skill_manifest"
   fi
 fi
 
