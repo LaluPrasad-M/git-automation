@@ -7,14 +7,13 @@ source "$_lib"
 
 action="${1:-unknown}"
 status="${2:-unknown}"
-audit_issue="${AUDIT_ISSUE_NUMBER:-}"
+repo_slug="${TARGET_REPO//\//__}"
+log_file="${SENTINEL_LOG:-${WORKSPACE:-.}/.state/logs/${repo_slug}.log}"
 
-if [[ -n "$audit_issue" ]]; then
-  now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  run_url="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-  body="[$now] action=$action status=$status pr=#${PR_NUMBER:-?} run=$run_url"
-  gh issue comment "$audit_issue" --repo "$GITHUB_REPOSITORY" --body "$body"
-fi
+mkdir -p "$(dirname "$log_file")"
+printf '[%s][AUDIT] action=%s status=%s pr=#%s\n' \
+  "$(date +'%Y-%m-%d %H:%M:%S')" "$action" "$status" "${PR_NUMBER:-?}" \
+  >> "$log_file"
 
 if [[ "$status" == "failure" ]]; then
   log ERROR "Action $action failed on PR #${PR_NUMBER:-?}"

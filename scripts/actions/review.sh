@@ -124,7 +124,7 @@ prompt+=$'    {"severity":"critical|major|minor|nit","path":"string","line":1,"t
 prompt+=$'  ]\n'
 prompt+=$'}\n'
 
-raw_output="$(claude -p "$prompt" --allowedTools "gh,git,cat,grep,find,head,tail,wc" --max-turns 10 --output-format text)"
+raw_output="$(call_llm "$prompt" "gh,git,cat,grep,find,head,tail,wc" 10)"
 printf '%s\n' "$raw_output" > /tmp/claude-review-output.txt
 
 if ! review_json="$(extract_json_payload "$raw_output")"; then

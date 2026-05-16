@@ -45,17 +45,19 @@ See [SETUP_GUIDE.md](SETUP_GUIDE.md) for full setup instructions.
 | Variable | Required | Purpose |
 |---|---|---|
 | `GH_TOKEN` | Yes | GitHub PAT with repo write access |
-| `ANTHROPIC_API_KEY` | Yes | Claude API access |
+| `ANTHROPIC_API_KEY` | Yes | Anthropic API key (default provider) |
 | `MY_GITHUB_USERNAME` | Yes | Your GitHub username |
 | `TARGET_REPOS` | Yes | Comma-separated repos to watch (`owner/repo,owner/repo2`) |
-| `WORKSPACE` | Yes | Absolute path to this repo on your machine |
-| `GITHUB_REPOSITORY` | Yes | This control repo (`owner/repo`) |
+| `GITHUB_REPOSITORY` | No | Control repo — required only if using audit or exception logging |
 | `AUTO_REVIEW_AUTHORS` | No | Auto-review PRs by these authors without reviewer assignment |
 | `DRY_RUN` | No | `true` to suppress all write operations |
 | `MAX_ACTIONS_PER_HOUR` | No | Rate limit, default 20 |
 | `POLL_INTERVAL_SECONDS` | No | Override poll interval (auto-calculated from repo count) |
 | `EXCEPTION_REGISTRY_ISSUE_NUMBER` | No | Issue for exception learning log |
 | `AUDIT_ISSUE_NUMBER` | No | Issue for pipeline run audit log |
+| `LLM_PROVIDER` | No | `anthropic` (default) or `openai` |
+| `OPENAI_API_KEY` | No | Required when `LLM_PROVIDER=openai` |
+| `OPENAI_MODEL` | No | OpenAI model, default `gpt-4o` |
 
 ### Per-repo config (`git-listeners/`)
 
@@ -108,7 +110,10 @@ config/
   prompts/defaults/
     review/review.md              # default review instructions
     approve/approve.md            # default approve instructions
-scripts/                          # execution engine
+scripts/
+  providers/
+    anthropic.sh                  # call_llm() via claude CLI
+    openai.sh                     # call_llm() via OpenAI API
 git-listeners/                    # per-repo config (gitignored)
 docs/                             # decision flows, troubleshooting, roadmap
 tests/                            # shell test suite
@@ -130,6 +135,8 @@ tests/                            # shell test suite
 ## Docs
 
 - [Setup Guide](SETUP_GUIDE.md)
+- [Docker Setup](docs/setup-docker.md)
+- [GitHub Actions Setup](docs/setup-github-actions.md)
 - [Troubleshooting](docs/TROUBLESHOOTING.md)
 - [Review & Approve Flow](docs/decision-flows/review_and_approve.md)
 - [Merge Flow](docs/decision-flows/merge.md)

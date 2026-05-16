@@ -73,7 +73,7 @@ if [[ -d "$repo_skills_dir" ]]; then
   fi
 fi
 
-decision="$(claude -p "$prompt" --allowedTools "gh,git,cat,grep" --max-turns 6 --output-format text | tail -n 1)"
+decision="$(call_llm "$prompt" "gh,git,cat,grep" 6 | tail -n 1)"
 if grep -q "DECISION: APPROVE" <<<"$decision"; then
   gh pr review "$PR_NUMBER" --repo "$TARGET_REPO" --approve --body "Auto-approved by Claude Git Sentinel after CI and quality checks."
 elif grep -q "DECISION: COMMENT - " <<<"$decision"; then

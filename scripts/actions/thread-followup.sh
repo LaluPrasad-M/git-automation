@@ -60,17 +60,12 @@ record_exception() {
   local rationale="$3"
   local learning="$4"
 
-  if [[ -n "${EXCEPTION_REGISTRY_ISSUE_NUMBER:-}" ]]; then
-    gh issue comment "$EXCEPTION_REGISTRY_ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "<!-- SENTINEL:EXCEPTION -->
-repo: $TARGET_REPO
-pr: #$PR_NUMBER
-path: $path
-thread_id: $thread_id
-rationale: $rationale
-learning: $learning" >/dev/null
-  else
-    gh pr comment "$PR_NUMBER" --repo "$TARGET_REPO" --body "Exception accepted (no registry issue configured): $rationale"
-  fi
+  local repo_slug="${TARGET_REPO//\//__}"
+  local log_file="${SENTINEL_LOG:-${WORKSPACE:-.}/.state/logs/${repo_slug}.log}"
+  mkdir -p "$(dirname "$log_file")"
+  printf '[%s][EXCEPTION] pr=#%s path=%s rationale=%s learning=%s\n' \
+    "$(date +'%Y-%m-%d %H:%M:%S')" "$PR_NUMBER" "$path" "$rationale" "$learning" \
+    >> "$log_file"
 }
 
 threads_query="query(\$owner:String!,\$name:String!,\$number:Int!){repository(owner:\$owner,name:\$name){pullRequest(number:\$number){reviewThreads(first:100){nodes{id isResolved path comments(first:50){nodes{id databaseId body author{login} createdAt}}}}}}}"
@@ -137,7 +132,7 @@ $file_diff
 
 Return ONLY JSON: {\"fixed\": true|false, \"reason\": \"...\"}."
 
-    verify_raw="$(claude -p "$verify_prompt" --allowedTools "cat,grep" --max-turns 4 --output-format text)"
+    verify_raw="$(call_llm "$verify_prompt" "cat,grep" 4)"
     if verify_json="$(extract_json_payload "$verify_raw")"; then
       fixed="$(jq -r '.fixed // false' <<<"$verify_json")"
       reason="$(jq -r '.reason // "No reason provided"' <<<"$verify_json")"
@@ -160,7 +155,7 @@ $latest_body
 
 Return ONLY JSON: {\"accepted\": true|false, \"reason\": \"...\", \"learning\": \"...\"}."
 
-    validate_raw="$(claude -p "$validate_prompt" --allowedTools "cat,grep" --max-turns 4 --output-format text)"
+    validate_raw="$(call_llm "$validate_prompt" "cat,grep" 4)"
     if validate_json="$(extract_json_payload "$validate_raw")"; then
       accepted="$(jq -r '.accepted // false' <<<"$validate_json")"
       reason="$(jq -r '.reason // "No reason provided"' <<<"$validate_json")"

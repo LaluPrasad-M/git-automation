@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
 
+_provider_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../providers" && pwd)"
+_provider="${LLM_PROVIDER:-anthropic}"
+# shellcheck disable=SC1090
+source "$_provider_dir/${_provider}.sh"
+
 log() {
   local type="$1"; shift
   local ts
