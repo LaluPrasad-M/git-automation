@@ -154,11 +154,7 @@ while IFS= read -r repo; do
 done < <(parse_target_repos "$TARGET_REPOS")
 
 repo_count="${#startup_repos[@]}"
-if [[ -n "${POLL_INTERVAL_SECONDS:-}" ]]; then
-  poll_interval="$POLL_INTERVAL_SECONDS"
-else
-  poll_interval="$(awk -v n="$repo_count" 'BEGIN { v = int(60 - 10 * sqrt(n - 1)); print (v < 10 ? 10 : v) }')"
-fi
+poll_interval="${POLL_INTERVAL_SECONDS:-60}"
 
 watching_repos="none"
 if [[ "$repo_count" -gt 0 ]]; then

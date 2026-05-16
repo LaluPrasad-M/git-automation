@@ -52,7 +52,7 @@ See [SETUP_GUIDE.md](SETUP_GUIDE.md) for full setup instructions.
 | `AUTO_REVIEW_AUTHORS` | No | Auto-review PRs by these authors without reviewer assignment |
 | `DRY_RUN` | No | `true` to suppress all write operations |
 | `MAX_ACTIONS_PER_HOUR` | No | Rate limit, default 20 |
-| `POLL_INTERVAL_SECONDS` | No | Override poll interval (auto-calculated from repo count) |
+| `POLL_INTERVAL_SECONDS` | No | Override poll interval (default: 60s) |
 | `EXCEPTION_REGISTRY_ISSUE_NUMBER` | No | Issue for exception learning log |
 | `AUDIT_ISSUE_NUMBER` | No | Issue for pipeline run audit log |
 | `LLM_PROVIDER` | No | `anthropic` (default) or `openai` |

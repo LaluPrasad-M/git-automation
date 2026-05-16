@@ -51,7 +51,7 @@ make ps       # container status
 
 ## How it works
 
-The listener polls GitHub Events API every ~45 seconds (auto-calculated based on repo count). When it detects a relevant event it runs:
+The listener polls GitHub Events API every 60 seconds (override with POLL_INTERVAL_SECONDS). When it detects a relevant event it runs:
 
 ```
 event → classify → guard → policy → action (review / followup / approve / merge)
