@@ -17,12 +17,12 @@ require_ci_pass="$(read_policy 'merge.require_ci_pass')"
 [[ -z "$require_ci_pass" ]] && require_ci_pass=true
 
 if [[ "$merge_enabled" != "true" ]]; then
-  echo "Merge skipped — merge is disabled in policy"
+  log SKIP "Merge skipped — merge is disabled in policy"
   exit 0
 fi
 
 if [[ "$require_ci_pass" != "true" ]]; then
-  echo "Merge skipped — policy requires CI to pass before merging"
+  log SKIP "Merge skipped — policy requires CI to pass before merging"
   exit 0
 fi
 
@@ -32,13 +32,13 @@ while true; do
 
   has_do_not_merge_label="$(jq '[.labels[]? | (.name // "") | ascii_downcase | select(. == "do-not-merge")] | length > 0' <<<"$pr_json")"
   if [[ "$has_do_not_merge_label" == "true" ]]; then
-    echo "Merge skipped — PR has a do-not-merge label"
+    log SKIP "Merge skipped — PR has a do-not-merge label"
     exit 0
   fi
 
   unresolved="$(jq '[.reviewThreads[]? | select(.isResolved == false)] | length' <<<"$pr_json")"
   if [[ "$unresolved" -gt 0 ]]; then
-    echo "Merge skipped — $unresolved unresolved review thread(s) must be resolved first"
+    log SKIP "Merge skipped — $unresolved unresolved review thread(s) must be resolved first"
     exit 0
   fi
 
@@ -56,7 +56,7 @@ while true; do
     | (.name // "unknown-check")
   ' <<<"$pr_json")"
   if [[ -n "$ci_running" ]]; then
-    echo "CI still in progress — will recheck in 3 minutes"
+    log INFO "CI still in progress — will recheck in 3 minutes"
     sleep "$poll_seconds"
     continue
   fi
@@ -72,7 +72,7 @@ while true; do
     | (.name // "unknown-check")
   ' <<<"$pr_json")"
   if [[ -n "$ci_failed" ]]; then
-    echo "Merge skipped — CI checks failed"
+    log SKIP "Merge skipped — CI checks failed"
     exit 0
   fi
 
@@ -81,13 +81,13 @@ done
 
 approval_count="$(jq '[.reviews[]? | select(.state == "APPROVED") | .author.login] | unique | length' <<<"$pr_json")"
 if [[ "$approval_count" -lt "$min_approvals" ]]; then
-  echo "Merge skipped — not enough approvals ($approval_count of $min_approvals required)"
+  log SKIP "Merge skipped — not enough approvals ($approval_count of $min_approvals required)"
   exit 0
 fi
 
 mergeable="$(jq -r '.mergeable // "UNKNOWN"' <<<"$pr_json")"
 if [[ "$mergeable" != "MERGEABLE" ]]; then
-  echo "Merge skipped — PR is not in a mergeable state ($mergeable)"
+  log SKIP "Merge skipped — PR is not in a mergeable state ($mergeable)"
   exit 0
 fi
 

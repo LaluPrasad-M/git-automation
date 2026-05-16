@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
+_lib="$(dirname "${BASH_SOURCE[0]}")/../shared/lib.sh"
+# shellcheck source=scripts/shared/lib.sh
+# shellcheck disable=SC1091
+source "$_lib"
 
 if [[ $# -lt 1 ]]; then
   echo "Usage: $0 <owner/repo>" >&2
@@ -33,7 +37,7 @@ fi
 
 if [[ -n "${TARGET_REPOS:-}" ]]; then
   if ! repo_in_allowlist "$target_repo" "$TARGET_REPOS"; then
-    echo "::error::Repo $target_repo is not allow-listed in TARGET_REPOS"
+    log ERROR "Repo $target_repo is not allow-listed in TARGET_REPOS"
     exit 1
   fi
 fi
@@ -50,4 +54,4 @@ fi
   echo "PROMPT_DIR=$prompt_dir"
 } >> "$GITHUB_ENV"
 
-echo "::notice::Using policy: $policy_file | prompts: $prompt_dir"
+log INFO "Using policy: $policy_file | prompts: $prompt_dir"

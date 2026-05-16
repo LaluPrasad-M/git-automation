@@ -139,20 +139,10 @@ is_auto_review_author_for_repo() {
   return 1
 }
 
-log_msg() {
-  local level="$1"
-  local event="$2"
-  shift 2
-
-  local ts
-  ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-
-  printf '%s level=%s component=listener event=%s' "$ts" "$level" "$event"
-  for kv in "$@"; do
-    printf ' %s' "$kv"
-  done
-  printf '\n'
-}
+_lib="$(dirname "${BASH_SOURCE[0]}")/../shared/lib.sh"
+# shellcheck source=scripts/shared/lib.sh
+# shellcheck disable=SC1091
+source "$_lib"
 
 state_dir="${STATE_DIR:-$workspace/.state/event-listener}"
 mkdir -p "$state_dir"
@@ -176,13 +166,10 @@ if [[ "$repo_count" -gt 0 ]]; then
   watching_repos="${watching_repos%,}"
 fi
 
-log_msg INFO startup \
-  "status=started" \
-  "workspace=$workspace" \
-  "state_dir=$state_dir" \
-  "watching_repo_count=$repo_count" \
-  "watching_repos=$watching_repos" \
-  "will_poll_every_seconds=$poll_interval"
+log INFO "Sentinel started — watching $repo_count repo(s), polling every ${poll_interval}s"
+for _r in "${startup_repos[@]}"; do
+  log INFO "  → $_r"
+done
 
 build_payload() {
   local event_json="$1"
@@ -273,9 +260,7 @@ while true; do
   done < <(parse_target_repos "$TARGET_REPOS")
 
   if [[ "${#repos[@]}" -eq 0 ]]; then
-    log_msg ERROR no_repositories \
-      "cycle=$cycle" \
-      "target_repos_raw=${TARGET_REPOS}"
+    log ERROR "No repositories found in TARGET_REPOS — check your .env"
     sleep "$poll_interval"
     continue
   fi
@@ -315,7 +300,7 @@ while true; do
         payload="$(build_payload "$event" "$repo" 2>/dev/null || true)"
         if [[ -n "$payload" ]]; then
           if ! bash scripts/listener/run-dispatch-local.sh "$payload"; then
-            echo "::warning::Dispatch failed for $repo event $(jq -r '.id // "unknown"' <<<"$event")"
+            log WARN "Dispatch failed for $repo event $(jq -r '.id // "unknown"' <<<"$event")"
           fi
         fi
       done < <(tac "$new_events_file")

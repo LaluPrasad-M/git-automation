@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
+_lib="$(dirname "${BASH_SOURCE[0]}")/../shared/lib.sh"
+# shellcheck source=scripts/shared/lib.sh
+# shellcheck disable=SC1091
+source "$_lib"
 
 if [[ $# -lt 1 ]]; then
   echo "Usage: $0 '<client_payload_json>'" >&2
@@ -30,7 +34,7 @@ if [[ -z "$pr_number" && -n "$feed_title" ]]; then
 fi
 
 if [[ -z "$target_repo" || -z "$pr_number" ]]; then
-  echo "::error::Unable to resolve target_repo/pr_number from payload"
+  log ERROR "Unable to resolve target_repo/pr_number from payload"
   exit 1
 fi
 
@@ -75,4 +79,4 @@ fi
   echo "approved_by=$approved_by"
 } >> "$GITHUB_OUTPUT"
 
-echo "::notice::Classified $target_repo#$pr_number => $action by $pr_author (trigger: $feed_title) | $pr_url"
+log INFO "Classified $target_repo#$pr_number => $action by $pr_author (trigger: $feed_title) | $pr_url"

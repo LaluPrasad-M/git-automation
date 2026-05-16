@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
+_lib="$(dirname "${BASH_SOURCE[0]}")/../shared/lib.sh"
+# shellcheck source=scripts/shared/lib.sh
+# shellcheck disable=SC1091
+source "$_lib"
 
 if [[ $# -lt 1 ]]; then
   echo "Usage: $0 '<client_payload_json>'" >&2
@@ -48,7 +52,7 @@ if [[ "$action" == "skip" ]]; then
 fi
 
 if [[ -z "$action" || "$action" == "unknown" ]]; then
-  echo "Skipping — no actionable event (classified as: ${action:-empty})"
+  log SKIP "No actionable event (classified as: ${action:-empty})"
   exit 0
 fi
 
@@ -62,7 +66,7 @@ bash scripts/pipeline/guards.sh \
 
 should_skip="$(grep -E '^should_skip=' "$guard_out" | tail -n1 | cut -d= -f2-)"
 if [[ "$should_skip" == "true" ]]; then
-  echo "Skipping $target_repo#$pr_number — guard blocked action=$action"
+  log SKIP "$target_repo#$pr_number — guard blocked action=$action"
   exit 0
 fi
 
@@ -79,7 +83,7 @@ if [[ "$action" == "review" || "$action" == "followup" ]]; then
     done
   fi
   if [[ "$_is_reviewer" != "true" && "$_author_whitelisted" != "true" ]]; then
-    echo "Skipping $target_repo#$pr_number — not a reviewer and author not in whitelist"
+    log SKIP "$target_repo#$pr_number — not a reviewer and author not in whitelist"
     exit 0
   fi
 fi
@@ -103,7 +107,7 @@ if [[ -f "$policy_file" ]]; then
   fi
 fi
 if [[ "$enabled" == "false" ]]; then
-  echo "Skipping — $action is disabled in policy for $target_repo"
+  log SKIP "$action is disabled in policy for $target_repo"
   exit 0
 fi
 

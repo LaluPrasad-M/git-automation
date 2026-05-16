@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
+_lib="$(dirname "${BASH_SOURCE[0]}")/../shared/lib.sh"
+# shellcheck source=scripts/shared/lib.sh
+# shellcheck disable=SC1091
+source "$_lib"
 
 pr_author=""
 bot_user=""
@@ -26,32 +30,32 @@ should_skip="false"
 if [[ "$action" == "merge" ]]; then
   if [[ -n "$pr_author" && -n "$bot_user" && "$pr_author" != "$bot_user" ]]; then
     _approver_info="${approved_by:+ (approved by $approved_by)}"
-    echo "::notice::Merge guard: PR authored by $pr_author, not $bot_user${_approver_info} — skipping"
+    log SKIP "Merge guard: PR authored by $pr_author, not $bot_user${_approver_info} — skipping"
     should_skip="true"
   fi
 else
   if [[ -n "$pr_author" && -n "$bot_user" && "$pr_author" == "$bot_user" ]]; then
-    echo "::warning::Self-filter: PR authored by $bot_user — skipping"
+    echo "Warning: Self-filter: PR authored by $bot_user — skipping"
     should_skip="true"
   fi
 fi
 
 if [[ "${DRY_RUN:-false}" == "true" ]]; then
-  echo "::notice::DRY_RUN is on — no actions will be taken"
+  log INFO "DRY_RUN is on — no actions will be taken"
   should_skip="true"
 fi
 
 max_actions="${MAX_ACTIONS_PER_HOUR:-20}"
 recent_runs="$(gh run list --repo "$GITHUB_REPOSITORY" --limit "$max_actions" --json createdAt --jq 'length' 2>/dev/null || echo 0)"
 if [[ "$recent_runs" -ge "$max_actions" ]]; then
-  echo "::warning::Rate limit reached: $recent_runs/$max_actions"
+  log WARN "Rate limit reached: $recent_runs/$max_actions"
   should_skip="true"
 fi
 
 
 echo "should_skip=$should_skip" >> "$GITHUB_OUTPUT"
 if [[ "$should_skip" == "true" ]]; then
-  echo "::notice::Guard: skipping action=$action pr=$pr_number"
+  log SKIP "Guard: skipping action=$action pr=$pr_number"
 else
-  echo "::notice::Guard: all checks passed, proceeding with action=$action pr=$pr_number"
+  log INFO "Guard passed —, proceeding with action=$action pr=$pr_number"
 fi

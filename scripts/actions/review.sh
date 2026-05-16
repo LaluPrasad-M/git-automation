@@ -24,7 +24,7 @@ if [[ -n "${AUTO_REVIEW_AUTHORS:-}" ]]; then
 fi
 
 if [[ "$is_reviewer" != "true" && "$author_whitelisted" != "true" ]]; then
-  echo "Not a requested reviewer and PR author not in AUTO_REVIEW_AUTHORS — skipping"
+  log SKIP "Not a requested reviewer and PR author not in AUTO_REVIEW_AUTHORS — skipping"
   exit 0
 fi
 

@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
+_lib="$(dirname "${BASH_SOURCE[0]}")/../shared/lib.sh"
+# shellcheck source=scripts/shared/lib.sh
+# shellcheck disable=SC1091
+source "$_lib"
 
 action="${1:-unknown}"
 status="${2:-unknown}"
@@ -13,7 +17,7 @@ if [[ -n "$audit_issue" ]]; then
 fi
 
 if [[ "$status" == "failure" ]]; then
-  echo "::error::Action $action failed on PR #${PR_NUMBER:-?}"
+  log ERROR "Action $action failed on PR #${PR_NUMBER:-?}"
 else
-  echo "::notice::Action $action completed with status=$status on PR #${PR_NUMBER:-?}"
+  log INFO "Action $action completed with status=$status on PR #${PR_NUMBER:-?}"
 fi
