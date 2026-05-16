@@ -162,7 +162,6 @@ log_msg() {
   printf '\n'
 }
 
-poll_interval="${POLL_INTERVAL_SECONDS:-60}"
 state_dir="${STATE_DIR:-$workspace/.state/event-listener}"
 mkdir -p "$state_dir"
 
@@ -172,8 +171,15 @@ while IFS= read -r repo; do
   startup_repos+=("$repo")
 done < <(parse_target_repos "$TARGET_REPOS_JSON")
 
+repo_count="${#startup_repos[@]}"
+if [[ -n "${POLL_INTERVAL_SECONDS:-}" ]]; then
+  poll_interval="$POLL_INTERVAL_SECONDS"
+else
+  poll_interval="$(awk -v n="$repo_count" 'BEGIN { v = int(60 - 10 * sqrt(n - 1)); print (v < 10 ? 10 : v) }')"
+fi
+
 watching_repos="none"
-if [[ "${#startup_repos[@]}" -gt 0 ]]; then
+if [[ "$repo_count" -gt 0 ]]; then
   watching_repos="$(printf '%s,' "${startup_repos[@]}")"
   watching_repos="${watching_repos%,}"
 fi
@@ -182,7 +188,7 @@ log_msg INFO startup \
   "status=started" \
   "workspace=$workspace" \
   "state_dir=$state_dir" \
-  "watching_repo_count=${#startup_repos[@]}" \
+  "watching_repo_count=$repo_count" \
   "watching_repos=$watching_repos" \
   "will_poll_every_seconds=$poll_interval"
 
