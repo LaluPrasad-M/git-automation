@@ -7,7 +7,6 @@ services:
     env_file:
       - .env
     environment:
-      - POLL_INTERVAL_SECONDS=${POLL_INTERVAL_SECONDS:-60}
       - WORKSPACE=/app
       - GITHUB_WORKSPACE=/app
     volumes:
