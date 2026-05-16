@@ -48,13 +48,9 @@ See [SETUP_GUIDE.md](SETUP_GUIDE.md) for full setup instructions.
 | `ANTHROPIC_API_KEY` | Yes | Anthropic API key (default provider) |
 | `MY_GITHUB_USERNAME` | Yes | Your GitHub username |
 | `TARGET_REPOS` | Yes | Comma-separated repos to watch (`owner/repo,owner/repo2`) |
-| `GITHUB_REPOSITORY` | No | Control repo — required only if using audit or exception logging |
 | `AUTO_REVIEW_AUTHORS` | No | Auto-review PRs by these authors without reviewer assignment |
 | `DRY_RUN` | No | `true` to suppress all write operations |
-| `MAX_ACTIONS_PER_HOUR` | No | Rate limit, default 20 |
 | `POLL_INTERVAL_SECONDS` | No | Override poll interval (default: 60s) |
-| `EXCEPTION_REGISTRY_ISSUE_NUMBER` | No | Issue for exception learning log |
-| `AUDIT_ISSUE_NUMBER` | No | Issue for pipeline run audit log |
 | `LLM_PROVIDER` | No | `anthropic` (default) or `openai` |
 | `OPENAI_API_KEY` | No | Required when `LLM_PROVIDER=openai` |
 | `OPENAI_MODEL` | No | OpenAI model, default `gpt-4o` |

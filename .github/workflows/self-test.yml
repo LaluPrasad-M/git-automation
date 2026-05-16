@@ -24,5 +24,4 @@ jobs:
           TARGET_REPO: owner/repo
           TARGET_REPOS: owner/repo
           MY_GITHUB_USERNAME: testuser
-          GITHUB_REPOSITORY: owner/git-automation
         run: make test

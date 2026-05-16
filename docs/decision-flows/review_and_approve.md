@@ -131,5 +131,5 @@ If Claude output cannot be parsed, a fallback reply asks the developer for clear
 
 ### Exception Recording
 
-- If `EXCEPTION_REGISTRY_ISSUE_NUMBER` is set: accepted exceptions are written as issue comments in `GITHUB_REPOSITORY` for persistent learning.
+- Accepted exceptions are written to `.state/logs/<owner>__<repo>.log` for persistent learning.
 - If not set: a plain PR comment is posted acknowledging the exception.

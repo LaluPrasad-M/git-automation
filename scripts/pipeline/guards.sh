@@ -45,12 +45,6 @@ if [[ "${DRY_RUN:-false}" == "true" ]]; then
   should_skip="true"
 fi
 
-max_actions="${MAX_ACTIONS_PER_HOUR:-20}"
-recent_runs="$(gh run list --repo "$GITHUB_REPOSITORY" --limit "$max_actions" --json createdAt --jq 'length' 2>/dev/null || echo 0)"
-if [[ "$recent_runs" -ge "$max_actions" ]]; then
-  log WARN "Rate limit reached: $recent_runs/$max_actions"
-  should_skip="true"
-fi
 
 
 echo "should_skip=$should_skip" >> "$GITHUB_OUTPUT"

@@ -26,4 +26,4 @@
 ## Claude execution fails
 
 - Confirm `ANTHROPIC_API_KEY` is set and valid.
-- Confirm `@anthropic-ai/claude-code` installed in runner.
+- Confirm `@anthropic-ai/claude-code` is installed in the runner — this npm package provides the `claude` CLI used by review and approve scripts.

@@ -47,14 +47,6 @@ approved_by=""
 log_msg="PR authored by contributor, not botuser${approved_by:+ (approved by $approved_by)} — skipping"
 check "merge guard log without approver" "PR authored by contributor, not botuser — skipping" "$log_msg"
 
-# Rate limit
-recent=21; max=20
-if [[ "$recent" -ge "$max" ]]; then res="true"; else res="false"; fi
-check "rate limited" "true" "$res"
-
-recent=5
-if [[ "$recent" -ge "$max" ]]; then res="true"; else res="false"; fi
-check "not rate limited" "false" "$res"
 
 echo "Results: pass=$pass fail=$fail"
 [[ "$fail" -eq 0 ]]

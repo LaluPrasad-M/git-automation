@@ -27,6 +27,7 @@ jobs:
       pr_number: ${{ steps.classify.outputs.pr_number }}
       pr_author: ${{ steps.classify.outputs.pr_author }}
       target_repo: ${{ steps.classify.outputs.target_repo }}
+      approved_by: ${{ steps.classify.outputs.approved_by }}
       policy_file: ${{ steps.policy.outputs.policy_file }}
       prompt_dir: ${{ steps.policy.outputs.prompt_dir }}
       should_skip: ${{ steps.guard.outputs.should_skip }}
@@ -59,7 +60,8 @@ jobs:
             --author '${{ steps.classify.outputs.pr_author }}' \
             --bot-user '${{ env.MY_GITHUB_USERNAME }}' \
             --action '${{ steps.classify.outputs.action }}' \
-            --pr-number '${{ steps.classify.outputs.pr_number }}'
+            --pr-number '${{ steps.classify.outputs.pr_number }}' \
+            --approved-by '${{ steps.classify.outputs.approved_by }}'
 
   auto-review:
     needs: classify
@@ -107,8 +109,6 @@ jobs:
       PR_NUMBER: ${{ needs.classify.outputs.pr_number }}
       POLICY_FILE: ${{ needs.classify.outputs.policy_file }}
       PROMPT_DIR: ${{ needs.classify.outputs.prompt_dir }}
-      EXCEPTION_REGISTRY_ISSUE_NUMBER: >-
-        ${{ vars.EXCEPTION_REGISTRY_ISSUE_NUMBER }}
     steps:
       - uses: actions/checkout@v4
       - name: Install deps
