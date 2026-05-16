@@ -33,9 +33,11 @@ if [[ "$action" == "merge" ]]; then
     log SKIP "Merge guard: PR authored by $pr_author, not $bot_user${_approver_info} — skipping"
     should_skip="true"
   fi
+elif [[ "$action" == "review" ]]; then
+  : # reviewing own PRs is allowed
 else
   if [[ -n "$pr_author" && -n "$bot_user" && "$pr_author" == "$bot_user" ]]; then
-    echo "Warning: Self-filter: PR authored by $bot_user — skipping"
+    log SKIP "Self-filter: PR authored by $bot_user — skipping $action"
     should_skip="true"
   fi
 fi

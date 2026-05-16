@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+_lib="$(dirname "${BASH_SOURCE[0]}")/../shared/lib.sh"
+[[ -f "$_lib" ]] || { echo "lib.sh not found" >&2; exit 1; }
+# shellcheck source=scripts/shared/lib.sh
+# shellcheck disable=SC1091
+source "$_lib"
+
 owner="${TARGET_REPO%/*}"
 repo="${TARGET_REPO#*/}"
 bot_user="${MY_GITHUB_USERNAME}"
@@ -67,6 +73,14 @@ record_exception() {
     "$(date +'%Y-%m-%d %H:%M:%S')" "$PR_NUMBER" "$path" "$rationale" "$learning" \
     >> "$log_file"
 }
+
+already_approved="$(gh pr view "$PR_NUMBER" --repo "$TARGET_REPO" --json reviews \
+  --jq --arg me "$bot_user" \
+  '[.reviews[]? | select(.author.login == $me and .state == "APPROVED")] | length > 0' 2>/dev/null || echo false)"
+if [[ "$already_approved" == "true" ]]; then
+  log SKIP "Already approved by $bot_user — skipping follow-up"
+  exit 0
+fi
 
 threads_query="query(\$owner:String!,\$name:String!,\$number:Int!){repository(owner:\$owner,name:\$name){pullRequest(number:\$number){reviewThreads(first:100){nodes{id isResolved path comments(first:50){nodes{id databaseId body author{login} createdAt}}}}}}}"
 threads_json="$(gh api graphql -f query="$threads_query" -F owner="$owner" -F name="$repo" -F number="$PR_NUMBER")"

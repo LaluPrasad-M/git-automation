@@ -37,108 +37,6 @@ parse_target_repos() {
   tr ',' '\n' <<<"$raw" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | sed '/^$/d'
 }
 
-trim_spaces() {
-  local value="$1"
-  value="${value#"${value%%[![:space:]]*}"}"
-  value="${value%"${value##*[![:space:]]}"}"
-  printf '%s' "$value"
-}
-
-author_in_list() {
-  local author="$1"
-  local authors_raw="$2"
-  local entry
-  local entries=()
-
-  IFS=',' read -ra entries <<<"$authors_raw"
-  for entry in "${entries[@]}"; do
-    entry="$(trim_spaces "$entry")"
-    [[ -z "$entry" ]] && continue
-    if [[ "$author" == "$entry" ]]; then
-      return 0
-    fi
-  done
-
-  return 1
-}
-
-scope_matches_repo() {
-  local repo="$1"
-  local scope="$2"
-  local repo_lower scope_lower
-
-  repo_lower="$(printf '%s' "$repo" | tr '[:upper:]' '[:lower:]')"
-  scope_lower="$(printf '%s' "$scope" | tr '[:upper:]' '[:lower:]')"
-
-  [[ "$scope_lower" == "all" || "$scope_lower" == "$repo_lower" ]]
-}
-
-is_auto_review_author_for_repo() {
-  local repo="$1"
-  local author="$2"
-  local rules_raw="$3"
-  local token scope values
-  local tokens=()
-  local active_scope=""
-  local active_values=""
-  local parsed_scope=0
-
-  [[ -z "$rules_raw" || -z "$author" ]] && return 1
-
-  # Legacy format: username1,username2
-  if [[ "$rules_raw" != *:* ]]; then
-    author_in_list "$author" "$rules_raw"
-    return $?
-  fi
-
-  # Scoped format with continuation support:
-  # all:username1,org/repo:username2,username3,org2/repo2:username4
-  IFS=',' read -ra tokens <<<"$rules_raw"
-  for token in "${tokens[@]}"; do
-    token="$(trim_spaces "$token")"
-    [[ -z "$token" ]] && continue
-
-    if [[ "$token" == *:* ]]; then
-      if [[ -n "$active_scope" ]]; then
-        parsed_scope=1
-        if scope_matches_repo "$repo" "$active_scope" && author_in_list "$author" "$active_values"; then
-          return 0
-        fi
-      fi
-
-      scope="$(trim_spaces "${token%%:*}")"
-      values="$(trim_spaces "${token#*:}")"
-      active_scope="$scope"
-      active_values="$values"
-      continue
-    fi
-
-    if [[ -n "$active_scope" ]]; then
-      if [[ -n "$active_values" ]]; then
-        active_values="$active_values,$token"
-      else
-        active_values="$token"
-      fi
-    elif [[ "$author" == "$token" ]]; then
-      return 0
-    fi
-  done
-
-  if [[ -n "$active_scope" ]]; then
-    parsed_scope=1
-    if scope_matches_repo "$repo" "$active_scope" && author_in_list "$author" "$active_values"; then
-      return 0
-    fi
-  fi
-
-  if [[ "$parsed_scope" -eq 0 ]]; then
-    author_in_list "$author" "$rules_raw"
-    return $?
-  fi
-
-  return 1
-}
-
 _lib="$(dirname "${BASH_SOURCE[0]}")/../shared/lib.sh"
 # shellcheck source=scripts/shared/lib.sh
 # shellcheck disable=SC1091
@@ -186,12 +84,26 @@ build_payload() {
         return 0
       fi
       if [[ "$action" == "opened" || "$action" == "reopened" ]]; then
+        pr_author="$(jq -r '.payload.pull_request.user.login // empty' <<<"$event_json")"
+        is_draft="$(jq -r '.payload.pull_request.draft // false' <<<"$event_json")"
+        [[ "$is_draft" == "true" ]] && return 1
+        if [[ -n "${MY_GITHUB_USERNAME:-}" && "$pr_author" == "$MY_GITHUB_USERNAME" ]]; then
+          jq -nc --arg repo "$repo" --arg pr "$pr_number" --arg t "review requested on PR #$pr_number" '{event_type:"pr_review_requested", client_payload:{target_repo:$repo, pr_number:$pr, feed_title:$t, action:"review", source:"docker-listener"}}'
+          return 0
+        fi
         if [[ -n "${AUTO_REVIEW_AUTHORS:-}" ]]; then
-          pr_author="$(jq -r '.payload.pull_request.user.login // empty' <<<"$event_json")"
           if is_auto_review_author_for_repo "$repo" "$pr_author" "$AUTO_REVIEW_AUTHORS"; then
             jq -nc --arg repo "$repo" --arg pr "$pr_number" --arg t "review requested on PR #$pr_number" '{event_type:"pr_review_requested", client_payload:{target_repo:$repo, pr_number:$pr, feed_title:$t, action:"review", source:"docker-listener"}}'
             return 0
           fi
+        fi
+      fi
+      if [[ "$action" == "synchronize" ]]; then
+        pr_author="$(jq -r '.payload.pull_request.user.login // empty' <<<"$event_json")"
+        is_draft="$(jq -r '.payload.pull_request.draft // false' <<<"$event_json")"
+        if [[ -n "${MY_GITHUB_USERNAME:-}" && "$pr_author" == "$MY_GITHUB_USERNAME" && "$is_draft" != "true" ]]; then
+          jq -nc --arg repo "$repo" --arg pr "$pr_number" --arg t "code pushed to PR #$pr_number" '{event_type:"pr_notification", client_payload:{target_repo:$repo, pr_number:$pr, feed_title:$t, action:"review", source:"docker-listener"}}'
+          return 0
         fi
       fi
       return 1
@@ -293,11 +205,14 @@ while true; do
 
     if [[ -s "$new_events_file" ]]; then
       while IFS= read -r event; do
-        payload="$(build_payload "$event" "$repo" 2>/dev/null || true)"
-        if [[ -n "$payload" ]]; then
-          if ! bash scripts/listener/run-dispatch-local.sh "$payload"; then
-            log WARN "Dispatch failed for $repo event $(jq -r '.id // "unknown"' <<<"$event")"
-          fi
+        payloads="$(build_payload "$event" "$repo" 2>/dev/null || true)"
+        if [[ -n "$payloads" ]]; then
+          while IFS= read -r payload; do
+            [[ -z "$payload" ]] && continue
+            if ! bash scripts/listener/run-dispatch-local.sh "$payload"; then
+              log WARN "Dispatch failed for $repo event $(jq -r '.id // "unknown"' <<<"$event")"
+            fi
+          done <<<"$payloads"
         fi
       done < <(tac "$new_events_file")
     fi

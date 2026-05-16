@@ -2,7 +2,7 @@
 set -euo pipefail
 
 _lib="$(dirname "${BASH_SOURCE[0]}")/../shared/lib.sh"
-[[ -f "$_lib" ]] || { echo "lib.sh not found — ensure scripts/lib.sh is committed" >&2; exit 1; }
+[[ -f "$_lib" ]] || { echo "lib.sh not found — ensure scripts/shared/lib.sh is committed" >&2; exit 1; }
 # shellcheck source=scripts/lib.sh
 # shellcheck disable=SC1091
 source "$_lib"
@@ -23,8 +23,19 @@ if [[ -n "${AUTO_REVIEW_AUTHORS:-}" ]]; then
   done
 fi
 
-if [[ "$is_reviewer" != "true" && "$author_whitelisted" != "true" ]]; then
+is_own_pr="false"
+[[ -n "${MY_GITHUB_USERNAME:-}" && "$pr_author" == "$MY_GITHUB_USERNAME" ]] && is_own_pr="true"
+
+if [[ "$is_own_pr" != "true" && "$is_reviewer" != "true" && "$author_whitelisted" != "true" ]]; then
   log SKIP "Not a requested reviewer and PR author not in AUTO_REVIEW_AUTHORS — skipping"
+  exit 0
+fi
+
+already_approved="$(gh pr view "$PR_NUMBER" --repo "$TARGET_REPO" --json reviews \
+  --jq --arg me "${MY_GITHUB_USERNAME:-}" \
+  '[.reviews[]? | select(.author.login == $me and .state == "APPROVED")] | length > 0' 2>/dev/null || echo false)"
+if [[ "$already_approved" == "true" ]]; then
+  log SKIP "Already approved by ${MY_GITHUB_USERNAME} — skipping review"
   exit 0
 fi
 
@@ -160,9 +171,10 @@ if [[ "$finding_count" -gt 0 ]]; then
     finding_id="$(printf '%s' "$finding_seed" | shasum | awk '{print $1}' | cut -c1-12)"
 
     severity_text="$(severity_label "$severity")"
-    body="Review Comment(Severity:${severity_text})\n$title\n\n$details\n\n<!-- SENTINEL:FINDING id=$finding_id severity=$severity -->"
+    body="$(printf 'Review Comment(Severity:%s)\n%s\n\n%s\n\n<!-- SENTINEL:FINDING id=%s severity=%s -->' \
+      "$severity_text" "$title" "$details" "$finding_id" "$severity")"
     if [[ -n "$recommendation" && "$recommendation" != "null" ]]; then
-      body+="\n\nRecommendation: $recommendation"
+      body+=$'\n\nRecommendation: '"$recommendation"
     fi
 
     if [[ -n "$path" && "$path" != "null" && "$line" =~ ^[0-9]+$ && "$line" -gt 0 ]]; then
@@ -172,20 +184,20 @@ if [[ "$finding_count" -gt 0 ]]; then
         -f path="$path" \
         -F line="$line" \
         -f side="RIGHT" >/dev/null 2>&1; then
-        fallback_findings+="- [$severity] $path:$line - $title\n"
+        fallback_findings+="$(printf '- [%s] %s:%s - %s\n' "$severity" "$path" "$line" "$title")"
       fi
     else
-      fallback_findings+="- [$severity] $title\n"
+      fallback_findings+="$(printf '- [%s] %s\n' "$severity" "$title")"
     fi
   done < <(jq -c '.findings // [] | .[]' <<<"$review_json")
 fi
 
-summary_body="Review summary: $summary\n\nVerdict: $verdict\nTest gaps: $test_gaps"
+summary_body="$(printf 'Review summary: %s\n\nVerdict: %s\nTest gaps: %s' "$summary" "$verdict" "$test_gaps")"
 if [[ -n "$fallback_findings" ]]; then
-  summary_body+="\n\nNon-inline findings (fallback):\n$fallback_findings"
+  summary_body+="$(printf '\n\nNon-inline findings (fallback):\n%s' "$fallback_findings")"
 fi
 
-summary_body+="\n\nCounts: critical=$critical_count, major=$major_count, minor=$minor_count, nit=$nit_count"
+summary_body+="$(printf '\n\nCounts: critical=%s, major=%s, minor=%s, nit=%s' "$critical_count" "$major_count" "$minor_count" "$nit_count")"
 
 summary_severity="nit"
 if [[ "$critical_count" -gt 0 ]]; then
@@ -196,11 +208,15 @@ elif [[ "$minor_count" -gt 0 ]]; then
   summary_severity="minor"
 fi
 summary_severity_text="$(severity_label "$summary_severity")"
-summary_body="Review Comment(Severity:${summary_severity_text})\n${summary_body}"
+summary_body="$(printf 'Review Comment(Severity:%s)\n%s' "$summary_severity_text" "$summary_body")"
 
 if [[ "$critical_count" -gt 0 ]]; then
-  gh pr review "$PR_NUMBER" --repo "$TARGET_REPO" --request-changes --body "$summary_body"
-elif [[ "$major_count" -gt 0 ]]; then
+  if [[ "$is_own_pr" == "true" ]]; then
+    gh pr comment "$PR_NUMBER" --repo "$TARGET_REPO" --body "$summary_body"
+  else
+    gh pr review "$PR_NUMBER" --repo "$TARGET_REPO" --request-changes --body "$summary_body"
+  fi
+elif [[ "$major_count" -gt 0 || "$is_own_pr" == "true" ]]; then
   gh pr comment "$PR_NUMBER" --repo "$TARGET_REPO" --body "$summary_body"
 else
   gh pr review "$PR_NUMBER" --repo "$TARGET_REPO" --approve --body "$summary_body"

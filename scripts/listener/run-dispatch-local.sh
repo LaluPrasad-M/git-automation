@@ -46,13 +46,14 @@ pr_number="$(grep -E '^pr_number=' "$classify_out" | tail -n1 | cut -d= -f2-)"
 pr_author="$(grep -E '^pr_author=' "$classify_out" | tail -n1 | cut -d= -f2-)"
 target_repo="$(grep -E '^target_repo=' "$classify_out" | tail -n1 | cut -d= -f2-)"
 approved_by="$(grep -E '^approved_by=' "$classify_out" | tail -n1 | cut -d= -f2-)"
+event_type="$(jq -r '.event_type // .client_payload.event_type // "unknown"' <<<"$payload")"
 
 if [[ "$action" == "skip" ]]; then
   exit 0
 fi
 
 if [[ -z "$action" || "$action" == "unknown" ]]; then
-  log SKIP "No actionable event (classified as: ${action:-empty})"
+  log SKIP "No actionable event (event: $event_type)"
   exit 0
 fi
 
@@ -71,20 +72,22 @@ if [[ "$should_skip" == "true" ]]; then
 fi
 
 if [[ "$action" == "review" || "$action" == "followup" ]]; then
-  # shellcheck disable=SC2016
-  _is_reviewer="$(gh pr view "$pr_number" --repo "$target_repo" --json reviewRequests \
-    --jq --arg me "${MY_GITHUB_USERNAME:-}" \
-    '[.reviewRequests[]? | select(.login == $me)] | length > 0' 2>/dev/null || echo false)"
-  _author_whitelisted="false"
-  if [[ -n "${AUTO_REVIEW_AUTHORS:-}" ]]; then
-    IFS=',' read -ra _wl <<< "$AUTO_REVIEW_AUTHORS"
-    for _a in "${_wl[@]}"; do
-      [[ "$pr_author" == "${_a// /}" ]] && { _author_whitelisted="true"; break; }
-    done
-  fi
-  if [[ "$_is_reviewer" != "true" && "$_author_whitelisted" != "true" ]]; then
-    log SKIP "$target_repo#$pr_number — not a reviewer and author not in whitelist"
-    exit 0
+  # Own PRs bypass the reviewer check — review was triggered by creation, not assignment
+  if [[ -n "${MY_GITHUB_USERNAME:-}" && "$pr_author" == "$MY_GITHUB_USERNAME" ]]; then
+    : # allowed — own PR review
+  else
+    # shellcheck disable=SC2016
+    _is_reviewer="$(gh pr view "$pr_number" --repo "$target_repo" --json reviewRequests \
+      --jq --arg me "${MY_GITHUB_USERNAME:-}" \
+      '[.reviewRequests[]? | select(.login == $me)] | length > 0' 2>/dev/null || echo false)"
+    _author_whitelisted="false"
+    if [[ -n "${AUTO_REVIEW_AUTHORS:-}" ]]; then
+      is_auto_review_author_for_repo "$target_repo" "$pr_author" "$AUTO_REVIEW_AUTHORS" && _author_whitelisted="true"
+    fi
+    if [[ "$_is_reviewer" != "true" && "$_author_whitelisted" != "true" ]]; then
+      log SKIP "$target_repo#$pr_number — not a reviewer and author not in whitelist"
+      exit 0
+    fi
   fi
 fi
 

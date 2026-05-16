@@ -58,14 +58,9 @@ ps: check-tools
 
 test:
 	@for f in scripts/actions/*.sh scripts/pipeline/*.sh scripts/listener/*.sh scripts/shared/*.sh tests/*.sh; do bash -n "$$f" || exit 1; done
-	@PATH="$(CURDIR)/tests/stubs:$$PATH" ANTHROPIC_API_KEY="" \
-	  ./tests/test-classify.sh && \
-	  PATH="$(CURDIR)/tests/stubs:$$PATH" ANTHROPIC_API_KEY="" \
-	  ./tests/test-guards.sh && \
-	  PATH="$(CURDIR)/tests/stubs:$$PATH" ANTHROPIC_API_KEY="" \
-	  bash tests/test-merge-ci.sh && \
-	  PATH="$(CURDIR)/tests/stubs:$$PATH" ANTHROPIC_API_KEY="" \
-	  ./tests/test-integration.sh
+	@for f in tests/test-*.sh; do \
+	  PATH="$(CURDIR)/tests/stubs:$$PATH" ANTHROPIC_API_KEY="" bash "$$f" || exit 1; \
+	done
 
 typecheck:
 	@bash scripts/shared/typecheck.sh all

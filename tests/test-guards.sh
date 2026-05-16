@@ -19,20 +19,29 @@ check() {
 
 should_skip() {
   local action="$1" author="$2" bot="$3"
+  local result="false"
   if [[ "$action" == "merge" ]]; then
-    if [[ "$author" != "$bot" ]]; then echo "true"; else echo "false"; fi
+    [[ "$author" != "$bot" ]] && result="true"
+  elif [[ "$action" == "review" ]]; then
+    result="false"
   else
-    if [[ "$author" == "$bot" ]]; then echo "true"; else echo "false"; fi
+    [[ "$author" == "$bot" ]] && result="true"
   fi
+  [[ "${DRY_RUN:-false}" == "true" ]] && result="true"
+  echo "$result"
 }
 
 bot="botuser"
 
-# Non-merge actions: skip own PRs
-check "review: skips own PR"       "true"  "$(should_skip review   botuser   $bot)"
+# Review: always proceeds (own PRs allowed)
+check "review: proceeds own PR"    "false" "$(should_skip review   botuser   $bot)"
 check "review: proceeds other PR"  "false" "$(should_skip review   contributor $bot)"
-check "approve: skips own PR"      "true"  "$(should_skip approve  botuser   $bot)"
-check "followup: skips own PR"     "true"  "$(should_skip followup botuser   $bot)"
+
+# followup/approve: skip own PRs (push-triggered followup is overridden in run-dispatch-local)
+check "approve: skips own PR"      "true"  "$(should_skip approve  botuser      $bot)"
+check "approve: proceeds other PR" "false" "$(should_skip approve  contributor  $bot)"
+check "followup: skips own PR"     "true"  "$(should_skip followup botuser      $bot)"
+check "followup: proceeds other PR" "false" "$(should_skip followup contributor $bot)"
 
 # Merge: only proceeds on own PRs
 check "merge: proceeds on own PR"  "false" "$(should_skip merge    botuser   $bot)"
@@ -47,6 +56,10 @@ approved_by=""
 log_msg="PR authored by contributor, not botuser${approved_by:+ (approved by $approved_by)} — skipping"
 check "merge guard log without approver" "PR authored by contributor, not botuser — skipping" "$log_msg"
 
+
+# DRY_RUN overrides all actions
+check "DRY_RUN: forces skip on review"   "true"  "$(DRY_RUN=true  should_skip review   contributor $bot)"
+check "DRY_RUN=false: does not force skip" "false" "$(DRY_RUN=false should_skip review contributor $bot)"
 
 echo "Results: pass=$pass fail=$fail"
 [[ "$fail" -eq 0 ]]
