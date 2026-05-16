@@ -220,7 +220,8 @@ build_payload() {
       state="$(jq -r '.payload.review.state // "" | ascii_upcase' <<<"$event_json")"
       if [[ -z "$pr_number" ]]; then return 1; fi
       if [[ "$state" == "APPROVED" ]]; then
-        jq -nc --arg repo "$repo" --arg pr "$pr_number" --arg t "approved PR #$pr_number" '{event_type:"pr_approval_received", client_payload:{target_repo:$repo, pr_number:$pr, feed_title:$t, action:"merge", source:"docker-listener"}}'
+        approver="$(jq -r '.payload.review.user.login // "unknown"' <<<"$event_json")"
+        jq -nc --arg repo "$repo" --arg pr "$pr_number" --arg t "approved PR #$pr_number" --arg approver "$approver" '{event_type:"pr_approval_received", client_payload:{target_repo:$repo, pr_number:$pr, feed_title:$t, action:"merge", approved_by:$approver, source:"docker-listener"}}'
         return 0
       fi
       if [[ "$state" == "CHANGES_REQUESTED" || "$state" == "COMMENTED" ]]; then
@@ -313,9 +314,11 @@ while true; do
 
     if [[ -s "$new_events_file" ]]; then
       while IFS= read -r event; do
-        payload="$(build_payload "$event" "$repo" || true)"
+        payload="$(build_payload "$event" "$repo" 2>/dev/null || true)"
         if [[ -n "$payload" ]]; then
-          bash scripts/run-dispatch-local.sh "$payload" || true
+          if ! bash scripts/run-dispatch-local.sh "$payload"; then
+            echo "::warning::Dispatch failed for $repo event $(jq -r '.id // "unknown"' <<<"$event")"
+          fi
         fi
       done < <(tac "$new_events_file")
     fi

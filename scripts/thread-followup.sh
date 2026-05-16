@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cd "$WORKSPACE"
-
 owner="${TARGET_REPO%/*}"
 repo="${TARGET_REPO#*/}"
 bot_user="${MY_GITHUB_USERNAME}"
@@ -91,17 +89,26 @@ candidates="$(jq -c --arg bot "$bot_user" '
       path: (.path // ""),
       latest_comment_id: ($last.databaseId // 0),
       latest_body: ($last.body // ""),
+      latest_author: ($last.author.login // "unknown"),
       bot_comment_body: ($botComments[0].body // "")
     }
 ' <<<"$threads_json")"
 
 if [[ -z "$candidates" ]]; then
-  echo "No unresolved sentinel threads with external replies"
+  echo "Nothing to follow up on — no unresolved review threads with replies"
   echo "remaining_sentinel_threads=0" >> "$GITHUB_OUTPUT"
   exit 0
 fi
 
-base_ref="$(gh pr view "$PR_NUMBER" --repo "$TARGET_REPO" --json baseRefName --jq '.baseRefName')"
+bash "$(dirname "${BASH_SOURCE[0]}")/setup-workspace.sh"
+_new_ws="$(grep '^WORKSPACE=' "${GITHUB_ENV:-/dev/null}" | tail -1 | cut -d= -f2-)"
+[[ -n "$_new_ws" ]] && { export WORKSPACE="$_new_ws"; cd "$WORKSPACE"; }
+
+base_ref="$(gh pr view "$PR_NUMBER" --repo "$TARGET_REPO" --json baseRefName --jq '.baseRefName // empty')"
+if [[ -z "$base_ref" ]]; then
+  echo "Unable to resolve base ref for ${TARGET_REPO}#${PR_NUMBER} — skipping follow-up" >&2
+  exit 1
+fi
 git fetch origin "$base_ref" >/dev/null 2>&1 || true
 
 while IFS= read -r item; do
@@ -110,7 +117,9 @@ while IFS= read -r item; do
   path="$(jq -r '.path' <<<"$item")"
   latest_comment_id="$(jq -r '.latest_comment_id' <<<"$item")"
   latest_body="$(jq -r '.latest_body' <<<"$item")"
+  latest_author="$(jq -r '.latest_author' <<<"$item")"
   bot_comment_body="$(jq -r '.bot_comment_body' <<<"$item")"
+  echo "Processing reply from $latest_author on $path"
 
   if is_positive_reply "$latest_body"; then
     file_diff="$(git diff --unified=0 "origin/$base_ref...HEAD" -- "$path" | head -c 12000)"
@@ -177,4 +186,4 @@ remaining="$(jq -r --arg bot "$bot_user" '[
 ] | length' <<<"$threads_after")"
 
 echo "remaining_sentinel_threads=$remaining" >> "$GITHUB_OUTPUT"
-echo "Remaining unresolved sentinel threads: $remaining"
+echo "Follow-up complete — $remaining unresolved review thread(s) remaining"

@@ -17,12 +17,12 @@ require_ci_pass="$(read_policy 'merge.require_ci_pass')"
 [[ -z "$require_ci_pass" ]] && require_ci_pass=true
 
 if [[ "$merge_enabled" != "true" ]]; then
-  echo "Merge disabled by policy"
+  echo "Merge skipped — merge is disabled in policy"
   exit 0
 fi
 
 if [[ "$require_ci_pass" != "true" ]]; then
-  echo "Merge blocked: merge.require_ci_pass must be true"
+  echo "Merge skipped — policy requires CI to pass before merging"
   exit 0
 fi
 
@@ -32,13 +32,13 @@ while true; do
 
   has_do_not_merge_label="$(jq '[.labels[]? | (.name // "") | ascii_downcase | select(. == "do-not-merge")] | length > 0' <<<"$pr_json")"
   if [[ "$has_do_not_merge_label" == "true" ]]; then
-    echo "PR has do-not-merge label"
+    echo "Merge skipped — PR has a do-not-merge label"
     exit 0
   fi
 
   unresolved="$(jq '[.reviewThreads[]? | select(.isResolved == false)] | length' <<<"$pr_json")"
   if [[ "$unresolved" -gt 0 ]]; then
-    echo "Open review comment threads present ($unresolved)"
+    echo "Merge skipped — $unresolved unresolved review thread(s) must be resolved first"
     exit 0
   fi
 
@@ -56,7 +56,7 @@ while true; do
     | (.name // "unknown-check")
   ' <<<"$pr_json")"
   if [[ -n "$ci_running" ]]; then
-    echo "CI still running; rechecking in 3 minutes"
+    echo "CI still in progress — will recheck in 3 minutes"
     sleep "$poll_seconds"
     continue
   fi
@@ -72,7 +72,7 @@ while true; do
     | (.name // "unknown-check")
   ' <<<"$pr_json")"
   if [[ -n "$ci_failed" ]]; then
-    echo "CI failed"
+    echo "Merge skipped — CI checks failed"
     exit 0
   fi
 
@@ -81,68 +81,15 @@ done
 
 approval_count="$(jq '[.reviews[]? | select(.state == "APPROVED") | .author.login] | unique | length' <<<"$pr_json")"
 if [[ "$approval_count" -lt "$min_approvals" ]]; then
-  echo "Insufficient approvals ($approval_count/$min_approvals)"
+  echo "Merge skipped — not enough approvals ($approval_count of $min_approvals required)"
   exit 0
 fi
 
 mergeable="$(jq -r '.mergeable // "UNKNOWN"' <<<"$pr_json")"
 if [[ "$mergeable" != "MERGEABLE" ]]; then
-  echo "PR not mergeable ($mergeable)"
+  echo "Merge skipped — PR is not in a mergeable state ($mergeable)"
   exit 0
 fi
 
-prompt_root="$(resolve_control_path "$PROMPT_DIR")"
-default_prompt_root="$GITHUB_WORKSPACE/config/prompts/defaults"
-
-template_file="$prompt_root/merge/merge.md"
-[[ ! -f "$template_file" ]] && template_file="$prompt_root/merge.md"
-[[ ! -f "$template_file" ]] && template_file="$default_prompt_root/merge/merge.md"
-[[ ! -f "$template_file" ]] && template_file="$default_prompt_root/merge.md"
-prompt="$(cat "$template_file")"
-prompt="${prompt//\{\{PR_NUMBER\}\}/$PR_NUMBER}"
-prompt="${prompt//\{\{TARGET_REPO\}\}/$TARGET_REPO}"
-prompt="${prompt//\{\{APPROVAL_COUNT\}\}/$approval_count}"
-prompt="${prompt//\{\{MIN_APPROVALS\}\}/$min_approvals}"
-prompt="${prompt//\{\{CI_STATUS\}\}/ALL PASSING}"
-prompt="${prompt//\{\{UNRESOLVED_THREADS\}\}/$unresolved}"
-prompt="${prompt//\{\{MERGE_METHOD\}\}/$merge_method}"
-
-skills_dir="$prompt_root/merge"
-if [[ ! -d "$skills_dir" ]]; then
-  skills_dir="$default_prompt_root/merge"
-fi
-
-skills_index_file="$skills_dir/index.md"
-skills_file_list=""
-if [[ -d "$skills_dir" ]]; then
-  skills_file_list="$(find "$skills_dir" -maxdepth 1 -type f ! -name 'index.md' -exec basename {} \; | sort)"
-fi
-
-if [[ -f "$skills_index_file" || -n "$skills_file_list" ]]; then
-  prompt+=$'\n\n## Optional Merge Skills\n'
-  prompt+=$'You may choose any, all, or none of these skills based on relevance to this PR.\n'
-
-  if [[ -f "$skills_index_file" ]]; then
-    prompt+=$'\n### Skills Guidance\n'
-    prompt+="$(cat "$skills_index_file")"
-    prompt+=$'\n'
-  fi
-
-  if [[ -n "$skills_file_list" ]]; then
-    prompt+=$'\n### Available Skill Files\n'
-    while IFS= read -r skill_file; do
-      [[ -z "$skill_file" ]] && continue
-      prompt+="- $skill_file"
-      prompt+=$'\n'
-    done <<< "$skills_file_list"
-  fi
-fi
-
-decision="$(claude -p "$prompt" --allowedTools "gh,git,cat,grep" --max-turns 4 --output-format text | tail -n 1)"
-if grep -q "DECISION: MERGE" <<<"$decision"; then
-  gh pr comment "$PR_NUMBER" --repo "$TARGET_REPO" --body "Merging PR automatically after policy checks."
-  gh pr merge "$PR_NUMBER" --repo "$TARGET_REPO" --"$merge_method" --body "Auto-merged by Claude Git Sentinel"
-else
-  reason="${decision#DECISION: HOLD - }"
-  gh pr comment "$PR_NUMBER" --repo "$TARGET_REPO" --body "Merge held: $reason"
-fi
+gh pr comment "$PR_NUMBER" --repo "$TARGET_REPO" --body "All checks passed. Merging automatically."
+gh pr merge "$PR_NUMBER" --repo "$TARGET_REPO" --"$merge_method" --body "Auto-merged by Claude Git Sentinel"

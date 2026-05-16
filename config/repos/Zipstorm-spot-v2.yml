@@ -3,7 +3,7 @@ repo: Zipstorm/spot-v2
 
 review:
   enabled: true
-  max_diff_lines: 6000
+  max_diff_lines: 2500
   severity_block_threshold: major
 
 approve:

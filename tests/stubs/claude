@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+echo "ERROR: claude called in tests — no Anthropic calls allowed" >&2
+exit 1

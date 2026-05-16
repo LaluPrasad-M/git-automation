@@ -13,7 +13,7 @@ if [[ -n "$audit_issue" ]]; then
 fi
 
 if [[ "$status" == "failure" ]]; then
-  echo "::error::Pipeline failed for action=$action pr=${PR_NUMBER:-?}"
+  echo "::error::Action $action failed on PR #${PR_NUMBER:-?}"
 else
-  echo "::notice::Pipeline status=$status action=$action"
+  echo "::notice::Action $action completed with status=$status on PR #${PR_NUMBER:-?}"
 fi

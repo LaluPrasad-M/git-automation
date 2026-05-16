@@ -41,14 +41,47 @@ action="$(grep -E '^action=' "$classify_out" | tail -n1 | cut -d= -f2-)"
 pr_number="$(grep -E '^pr_number=' "$classify_out" | tail -n1 | cut -d= -f2-)"
 pr_author="$(grep -E '^pr_author=' "$classify_out" | tail -n1 | cut -d= -f2-)"
 target_repo="$(grep -E '^target_repo=' "$classify_out" | tail -n1 | cut -d= -f2-)"
+approved_by="$(grep -E '^approved_by=' "$classify_out" | tail -n1 | cut -d= -f2-)"
 
 if [[ "$action" == "skip" ]]; then
   exit 0
 fi
 
 if [[ -z "$action" || "$action" == "unknown" ]]; then
-  echo "No runnable action for payload (action=${action:-empty})"
+  echo "Skipping — no actionable event (classified as: ${action:-empty})"
   exit 0
+fi
+
+export GITHUB_OUTPUT="$guard_out"
+bash scripts/guards.sh \
+  --author "$pr_author" \
+  --bot-user "${MY_GITHUB_USERNAME:-}" \
+  --action "$action" \
+  --pr-number "$pr_number" \
+  --approved-by "$approved_by"
+
+should_skip="$(grep -E '^should_skip=' "$guard_out" | tail -n1 | cut -d= -f2-)"
+if [[ "$should_skip" == "true" ]]; then
+  echo "Skipping $target_repo#$pr_number — guard blocked action=$action"
+  exit 0
+fi
+
+if [[ "$action" == "review" || "$action" == "followup" ]]; then
+  # shellcheck disable=SC2016
+  _is_reviewer="$(gh pr view "$pr_number" --repo "$target_repo" --json reviewRequests \
+    --jq --arg me "${MY_GITHUB_USERNAME:-}" \
+    '[.reviewRequests[]? | select(.login == $me)] | length > 0' 2>/dev/null || echo false)"
+  _author_whitelisted="false"
+  if [[ -n "${AUTO_REVIEW_AUTHORS:-}" ]]; then
+    IFS=',' read -ra _wl <<< "$AUTO_REVIEW_AUTHORS"
+    for _a in "${_wl[@]}"; do
+      [[ "$pr_author" == "${_a// /}" ]] && { _author_whitelisted="true"; break; }
+    done
+  fi
+  if [[ "$_is_reviewer" != "true" && "$_author_whitelisted" != "true" ]]; then
+    echo "Skipping $target_repo#$pr_number — not a reviewer and author not in whitelist"
+    exit 0
+  fi
 fi
 
 export GITHUB_OUTPUT="$policy_out"
@@ -60,23 +93,22 @@ prompt_dir="$(grep -E '^prompt_dir=' "$policy_out" | tail -n1 | cut -d= -f2-)"
 
 export TARGET_REPO="$target_repo"
 export POLICY_FILE="$policy_file"
-export GITHUB_OUTPUT="$guard_out"
-bash scripts/guards.sh \
-  --author "$pr_author" \
-  --bot-user "${MY_GITHUB_USERNAME:-}" \
-  --action "$action" \
-  --pr-number "$pr_number"
 
-should_skip="$(grep -E '^should_skip=' "$guard_out" | tail -n1 | cut -d= -f2-)"
-if [[ "$should_skip" == "true" ]]; then
-  echo "Guard requested skip for $target_repo#$pr_number action=$action"
+enabled="true"
+if [[ -f "$policy_file" ]]; then
+  if [[ "$(yq e '.repo' "$policy_file" 2>/dev/null)" != "null" ]]; then
+    enabled="$(yq e ".${action}.enabled // true" "$policy_file")"
+  else
+    enabled="$(yq e ".defaults.${action}.enabled // true" "$policy_file")"
+  fi
+fi
+if [[ "$enabled" == "false" ]]; then
+  echo "Skipping — $action is disabled in policy for $target_repo"
   exit 0
 fi
 
 export PR_NUMBER="$pr_number"
 export PROMPT_DIR="$prompt_dir"
-
-bash scripts/setup-workspace.sh
 
 case "$action" in
   review)

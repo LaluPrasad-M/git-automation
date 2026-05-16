@@ -135,6 +135,19 @@ The sentinel triggers a review when:
 1. **Reviewer assignment** — `MY_GITHUB_USERNAME` is explicitly added as a reviewer on a PR.
 2. **Author rules** — A PR is opened or reopened by a matching author from `AUTO_REVIEW_AUTHORS`, regardless of reviewer assignment. Use global rules (`username1,username2`) or scoped rules (`all:username1,org/repo:username2,username3`).
 
+### Merge behaviour
+
+The sentinel only merges **your own PRs** (`MY_GITHUB_USERNAME` is the PR author). PRs by others are skipped at the guard stage.
+
+When triggered by an approval event, merge proceeds automatically if:
+- No `do-not-merge` label
+- No unresolved review threads
+- All CI checks pass (polls every 3 minutes if still running)
+- PR is in a mergeable state
+- Approval count meets `merge.min_approvals`
+
+No Claude prompt is involved — merge is fully deterministic.
+
 ### Policy resolution
 
 - Repo-specific: config/repos/\<owner-repo\>.yml

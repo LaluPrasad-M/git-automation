@@ -1,76 +1,42 @@
 # Merge Decision Flow
 
-This document captures the current merge flow implemented by the workflow and scripts.
-
 ## Entry Conditions
 
-1. `repository_dispatch` triggers [sentinel workflow](../../.github/workflows/sentinel.yml).
-2. Classifier sets `action=merge` in [scripts/classify.sh](../../scripts/classify.sh) (explicit action or approval-style feed title).
-3. Workflow runs `auto-merge` only when:
-   - `action == merge`
-   - `should_skip != true`
+1. `PullRequestReviewEvent` with state `APPROVED` is detected by the event listener.
+2. Classifier sets `action=merge` in [scripts/classify.sh](../../scripts/classify.sh).
+3. Guards evaluate. Merge is skipped unless **PR author == `MY_GITHUB_USERNAME`**.
 
-## Merge Runner
+The merge flow only acts on your own PRs. PRs authored by others are skipped at the guard stage regardless of who approved them.
 
-The merge job executes [scripts/merge.sh](../../scripts/merge.sh).
+## Execution Order
 
-## Hard Gates (Skip On Failure)
+```
+classify → guards (author check) → policy → merge.sh
+```
 
-Merge exits early (no merge) when any of the following is true:
+No workspace clone is performed. The entire flow uses GitHub API calls only.
+
+## Hard Gates (exit immediately if any fail)
 
 1. `merge.enabled` is not `true` in policy.
 2. `merge.require_ci_pass` is not `true` in policy.
-3. PR has label `do-not-merge` (case-insensitive match).
-4. Any unresolved review thread exists (open comment threads).
-5. Any CI check has a terminal non-passing state (for example `FAILURE`, `ERROR`, `CANCELLED`, `TIMED_OUT`).
+3. PR has a `do-not-merge` label (case-insensitive).
+4. Any unresolved review thread exists.
+5. Any CI check has a terminal failing state (`FAILURE`, `ERROR`, `CANCELLED`, `TIMED_OUT`).
 6. Approval count is below `merge.min_approvals`.
-7. GitHub reports PR `mergeable` status as anything other than `MERGEABLE`.
+7. GitHub reports `mergeable` status as anything other than `MERGEABLE`.
 
 ## CI Waiting Behavior
 
-1. If CI checks are still running (`PENDING`, `IN_PROGRESS`, `QUEUED`, `EXPECTED`, `WAITING`, `REQUESTED`), merge waits 3 minutes.
-2. After 3 minutes, merge re-fetches PR state and re-checks all gates.
-3. This loop continues until CI reaches terminal states.
-4. If terminal CI is failing, merge is skipped.
-5. `do-not-merge` and unresolved-thread checks are evaluated on every poll and skip immediately (no waiting) when present.
+1. If any CI check is still running (`PENDING`, `IN_PROGRESS`, `QUEUED`, `EXPECTED`, `WAITING`, `REQUESTED`), wait 3 minutes.
+2. Re-fetch PR state and re-evaluate all gates.
+3. Loop until CI reaches a terminal state.
+4. `do-not-merge` label and unresolved thread checks are evaluated on every iteration and exit immediately when present.
 
-## Prompt Construction
+## Merge
 
-When all hard gates pass, merge prompt is built from:
-
-1. `<PROMPT_DIR>/merge/merge.md`
-2. `<PROMPT_DIR>/merge.md`
-3. `config/prompts/defaults/merge/merge.md`
-4. `config/prompts/defaults/merge.md` (legacy fallback)
-
-Prompt variables include:
-
-- `PR_NUMBER`
-- `TARGET_REPO`
-- `APPROVAL_COUNT`
-- `MIN_APPROVALS`
-- `CI_STATUS`
-- `UNRESOLVED_THREADS`
-- `MERGE_METHOD`
-
-Optional merge guidance is appended from merge `index.md` and sibling skill files.
-
-## Decision Contract
-
-Claude returns a final decision line:
-
-1. `DECISION: MERGE`
-2. `DECISION: HOLD - <reason>`
-
-## Final Actions
-
-1. If `DECISION: MERGE`:
-   - Post PR comment: merge is proceeding.
-   - Execute `gh pr merge` using configured `merge.method`.
-2. If `DECISION: HOLD - ...`:
-   - Post PR comment with hold reason.
-   - Do not merge.
+When all gates pass, the sentinel posts a comment and merges using the configured `merge.method` (default: squash). No Claude prompt or decision is involved — merge is deterministic based on conditions alone.
 
 ## Policy Source
 
-Default merge policy values are defined in [config/sentinel.yml](../../config/sentinel.yml), and can be overridden per repository in [config/repos](../../config/repos).
+Default merge policy is defined in [config/sentinel.yml](../../config/sentinel.yml) and can be overridden per repository in [config/repos](../../config/repos).

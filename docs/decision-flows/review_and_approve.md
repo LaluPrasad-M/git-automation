@@ -1,186 +1,134 @@
-# Review And Approve Decision Flows
+# Review and Approve Decision Flows
 
-This document captures the exact runtime flow for review and approve actions in the current Git Sentinel implementation.
-
-## State Machine
-
-1. `REVIEW_REQUESTED` -> run review policy and post inline findings.
-2. `FOLLOWUP_PENDING` -> wait for external replies on bot-owned threads.
-3. `FOLLOWUP_VERIFY` -> verify fixes or rationale for each replied thread.
-4. `FOLLOWUP_RESOLVE` -> resolve verified threads or accepted exceptions.
-5. `REVIEW_RECHECK` -> when all sentinel threads are resolved, rerun review policy on latest code state.
-6. `APPROVE_GATE` -> allow approve runner only when no unresolved sentinel threads remain.
-
-## Review Severity Policy
-
-Review runner applies this policy after posting findings:
-
-1. Critical findings present:
-   - post all findings
-   - submit `REQUEST_CHANGES`
-2. No critical, but major findings present:
-   - post all findings
-   - do not approve and do not block (comment-only)
-3. No critical and no major:
-   - if minor/nit findings exist, post findings and approve
-   - if no findings, approve directly
-
-## Shared Entry Path
-
-1. GitHub receives a `repository_dispatch` event and triggers [sentinel workflow](../../.github/workflows/sentinel.yml).
-2. `classify` job runs:
-   - [scripts/classify.sh](../../scripts/classify.sh)
-   - [scripts/load-policy.sh](../../scripts/load-policy.sh)
-   - [scripts/guards.sh](../../scripts/guards.sh)
-3. If `should_skip != true`, workflow routes by action:
-   - `review` -> `auto-review`
-   - `followup` -> `auto-followup`
-   - `approve` -> `auto-approve`
+---
 
 ## Review Flow
 
-### How Review Is Decided
+### Trigger
 
-The classifier in [scripts/classify.sh](../../scripts/classify.sh) decides `action=review` using this priority order:
+A review runs when `MY_GITHUB_USERNAME` is added as a reviewer on a PR, or when the PR is opened by an author listed in `AUTO_REVIEW_AUTHORS`.
 
-1. If `client_payload.action` is present, it is used directly.
-2. Else if `feed_title` contains `review requested` or `requested your review`, action is `review`.
-3. Else if `feed_title` contains `commented` or `requested changes`:
-   - action is `followup`
-4. Else if `feed_title` contains approval keywords, action is `merge`.
-5. Else if `feed_title` contains CI/check keywords, action is `approve`.
-6. Else fallback to GitHub PR metadata: if bot user is in `reviewRequests`, action is `review`.
-7. If PR state is not OPEN, action is `skip`.
+### Execution Order
 
-Routing then happens in [sentinel workflow](../../.github/workflows/sentinel.yml):
-
-1. `auto-review` runs only when `action == review`.
-2. Guard rails can still suppress execution when `should_skip == true`.
-
-### Example Payload
-
-```json
-{
-  "feed_title": "Review requested on PR #42",
-  "feed_link": "https://github.com/Zipstorm/spot-v2/pull/42",
-  "target_repo": "Zipstorm/spot-v2"
-}
+```
+classify → guards (skip own PRs) → policy → review.sh (clone → diff check → Claude → post findings)
 ```
 
-### Step-by-Step
+### Hard Gates
 
-1. Classifier parses payload and resolves:
-   - `target_repo` from `client_payload.target_repo` (or feed link fallback)
-   - `pr_number` from payload/link/title
-   - `action=review` from explicit action or feed-title heuristics
-2. Policy resolver validates target repo allow-list and resolves:
-   - `POLICY_FILE`
-   - `PROMPT_DIR`
-3. Guards evaluate:
-   - self-filter
-   - dry-run mode
-   - rate limit
-   - action enabled in policy
-4. Review job checks out target PR branch via [scripts/setup-workspace.sh](../../scripts/setup-workspace.sh).
-5. Review runner [scripts/review.sh](../../scripts/review.sh):
-   - reads `review.max_diff_lines` from policy
-   - blocks oversized diffs with PR comment
-   - builds review prompt from repo-specific or default prompt
-   - injects optional review guidance from `index.md`
-   - injects available review skill file names in the review folder
-6. Claude returns structured JSON findings.
-7. Runner posts findings as inline PR comments (path + line) when possible.
-8. Runner applies severity policy (`REQUEST_CHANGES` / comment-only / approve) and posts summary.
+1. PR state is not `OPEN` → skip.
+2. `MY_GITHUB_USERNAME` is not in the PR's reviewer list AND PR author is not in `AUTO_REVIEW_AUTHORS` → skip.
+3. PR author is `MY_GITHUB_USERNAME` → skip (self-filter).
+4. Diff line count exceeds `review.max_diff_lines` (default 2500) → post comment asking to split the PR into smaller tasks, stop.
 
-### Review Comment Format
+### What Happens
 
-All reviewer comments emitted by automation (inline findings and summary review body) use this format:
+1. Check reviewer/whitelist eligibility via GitHub API.
+2. Clone target repo if not already present, otherwise fetch latest (reuses existing workspace).
+3. Check diff size against policy limit.
+3. Fetch PR metadata (title, author, file count, additions, deletions).
+4. Build review prompt from repo-specific or default template, inject PR metadata.
+5. Append optional skill files from `<PROMPT_DIR>/review/` if present.
+6. Call Claude with tools: `gh, git, cat, grep, find, head, tail, wc` (max 10 turns).
+7. Parse JSON response: `summary`, `verdict`, `test_gaps`, `findings[]`.
+8. Post each finding as an inline PR comment (path + line) where possible; fall back to summary comment.
+9. Apply severity policy:
+   - Any `critical` finding → `REQUEST_CHANGES`
+   - Only `major` findings → comment-only (no block, no approval)
+   - No critical or major → approve
 
-1. Line 1: `Review Comment(Severity:Critical|Major|Minor|Nit)`
-2. Line 2 onward: actual review content
+### Finding Comment Format
 
-This format is enforced in [scripts/review.sh](../../scripts/review.sh).
+```
+Review Comment(Severity:Critical|Major|Minor|Nit)
+<title>
 
-### Prompt Resolution Order (Review)
+<details>
 
-1. `<PROMPT_DIR>/review/review.md`
-2. `<PROMPT_DIR>/review.md`
-3. `config/prompts/defaults/review/review.md`
-4. `config/prompts/defaults/review.md` (legacy fallback)
+<!-- SENTINEL:FINDING id=<hash> severity=<level> -->
 
-### Skills Resolution (Review)
+Recommendation: <recommendation>
+```
 
-1. Skills directory is `<PROMPT_DIR>/review`, else defaults to `config/prompts/defaults/review`.
-2. `index.md` is treated as guidance.
-3. Every other file in that folder is listed as an optional skill candidate.
+---
 
 ## Approve Flow
 
-### Example Payload
+### Trigger
 
-```json
-{
-  "feed_title": "All checks passed on PR #42",
-  "feed_link": "https://github.com/Zipstorm/spot-v2/pull/42",
-  "target_repo": "Zipstorm/spot-v2",
-  "action": "approve"
-}
+Approve runs when CI completes on a PR (`CheckSuiteEvent` or `CheckRunEvent` with action `completed`).
+
+### Execution Order
+
+```
+classify → guards (skip own PRs) → policy → approve.sh (API checks only, no clone)
 ```
 
-### Step-by-Step
+### Hard Gates
 
-1. Classifier parses payload and resolves `action=approve` (explicit action takes precedence).
-2. Policy resolver and guard checks are the same as review flow.
-3. Approve job checks out target PR branch via [scripts/setup-workspace.sh](../../scripts/setup-workspace.sh).
-4. Approve runner [scripts/approve.sh](../../scripts/approve.sh):
-   - fetches `statusCheckRollup`
-   - blocks if any non-success check exists
-   - defers approval if unresolved sentinel review threads still exist
-   - validates all configured `approve.required_checks` are present
-   - builds approve prompt from repo-specific or default prompt
-   - injects optional approve guidance from `index.md`
-   - injects available approve skill file names in the approve folder
-5. Claude returns one-line decision:
-   - `DECISION: APPROVE` -> bot posts GitHub approval review
-   - `DECISION: COMMENT - <reason>` -> bot posts a non-blocking comment and leaves PR unapproved
-   - `DECISION: BLOCK - <reason>` -> bot posts blocking comment
+1. PR author is `MY_GITHUB_USERNAME` → skip (self-filter).
+2. Any CI check is not passing (`SUCCESS`, `NEUTRAL`, `SKIPPED`) → post blocking comment, stop.
+3. Any unresolved sentinel review thread exists → post deferral comment, stop.
+4. Any configured `approve.required_checks` check is missing from the rollup → post blocking comment, stop.
 
-### Prompt Resolution Order (Approve)
+### What Happens
 
-1. `<PROMPT_DIR>/approve/approve.md`
-2. `<PROMPT_DIR>/approve.md`
-3. `config/prompts/defaults/approve/approve.md`
-4. `config/prompts/defaults/approve.md` (legacy fallback)
+1. Fetch `statusCheckRollup` for the PR.
+2. Check all CI checks pass.
+3. Query review threads via GraphQL, check for unresolved sentinel threads.
+4. Validate required checks are present.
+5. Build approve prompt from repo-specific or default template.
+6. Call Claude with tools: `gh, git, cat, grep` (max 6 turns).
+7. Apply decision:
+   - `DECISION: APPROVE` → post GitHub approval review
+   - `DECISION: COMMENT - <reason>` → post non-blocking comment, leave PR unapproved
+   - `DECISION: BLOCK - <reason>` → post blocking comment
 
-### Skills Resolution (Approve)
+---
 
-1. Skills directory is `<PROMPT_DIR>/approve`, else defaults to `config/prompts/defaults/approve`.
-2. `index.md` is treated as guidance.
-3. Every other file in that folder is listed as an optional skill candidate.
+## Follow-up Flow
 
-## Follow-up Flow (Thread Replies)
+### Trigger
 
-Triggered when classifier sets `action=followup` for non-author comment events.
+Follow-up runs when a comment is posted on a PR. It is a **continuation of a previous review** — no reviewer/whitelist check is needed since the sentinel already established involvement when it reviewed the PR.
 
-1. Runner [scripts/thread-followup.sh](../../scripts/thread-followup.sh) loads unresolved review threads.
-2. It filters to bot-owned sentinel findings (threads containing `SENTINEL:FINDING` marker).
-3. For each thread with latest external reply:
-   - positive reply path:
-     - verify resolution against comment + file diff
-     - if fixed, resolve thread
-     - if not fixed, reply on same thread with discrepancy
-   - non-positive reply path:
-     - validate rationale
-     - if accepted, record exception and resolve thread
-     - if not accepted, reply and keep thread open
-4. Exception registry recording:
-   - if `EXCEPTION_REGISTRY_ISSUE_NUMBER` is configured, accepted exceptions are persisted as issue comments in control repo
-5. Output includes remaining unresolved sentinel thread count.
+### Execution Order
 
-## Notes
+```
+classify → guards (skip own PRs) → policy →
+  thread check (API, no clone) →
+  if no threads: exit →
+  clone (reuse if exists, fetch if not) → per-thread: verify fix or validate rationale
+```
 
-1. Repo-specific prompt directory matching is exact by `owner/repo` path.
-2. Policy file matching is by slug format (`owner-repo.yml`).
-3. Review and approve jobs use concurrency groups to avoid parallel duplication on the same PR/action.
-4. Current implementation supports legacy fallback prompt paths for compatibility, but canonical structure is action-folder based.
-5. Thread resolution uses GitHub review-thread GraphQL APIs and is marker-based (`SENTINEL:FINDING`).
+The workspace clone only happens if there are actually threads to process.
+
+### Thread Selection
+
+Threads are included only if:
+1. Thread is unresolved.
+2. Thread contains a `SENTINEL:FINDING` marker comment from the bot.
+3. The latest reply on the thread is from a non-bot author.
+
+If no threads match, the flow exits immediately with no further action.
+
+### Per-Thread Decision
+
+**Positive reply** (keywords: `fixed`, `addressed`, `done`, `updated`, `resolved`, `implemented`):
+1. Build verify prompt with the original finding, developer reply, file path, and diff excerpt.
+2. Claude returns `{ "fixed": true|false, "reason": "..." }`.
+3. If `fixed=true` → resolve thread.
+4. If `fixed=false` → reply explaining what still needs to be addressed.
+
+**Non-positive reply** (keywords: `won't fix`, `defer`, `partial`, `decline`):
+1. Build rationale-validation prompt with original finding and developer reply.
+2. Claude returns `{ "accepted": true|false, "reason": "...", "learning": "..." }`.
+3. If `accepted=true` → record exception, resolve thread.
+4. If `accepted=false` → reply and keep thread open.
+
+If Claude output cannot be parsed, a fallback reply asks the developer for clearer context.
+
+### Exception Recording
+
+- If `EXCEPTION_REGISTRY_ISSUE_NUMBER` is set: accepted exceptions are written as issue comments in `GITHUB_REPOSITORY` for persistent learning.
+- If not set: a plain PR comment is posted acknowledging the exception.

@@ -5,6 +5,7 @@ pr_author=""
 bot_user=""
 action=""
 pr_number=""
+approved_by=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -12,6 +13,7 @@ while [[ $# -gt 0 ]]; do
     --bot-user) bot_user="$2"; shift 2 ;;
     --action) action="$2"; shift 2 ;;
     --pr-number) pr_number="$2"; shift 2 ;;
+    --approved-by) approved_by="$2"; shift 2 ;;
     *) echo "Unknown arg: $1" >&2; exit 2 ;;
   esac
 done
@@ -21,13 +23,21 @@ done
 
 should_skip="false"
 
-if [[ -n "$pr_author" && -n "$bot_user" && "$pr_author" == "$bot_user" ]]; then
-  echo "::warning::Self-filter: PR author is bot user"
-  should_skip="true"
+if [[ "$action" == "merge" ]]; then
+  if [[ -n "$pr_author" && -n "$bot_user" && "$pr_author" != "$bot_user" ]]; then
+    _approver_info="${approved_by:+ (approved by $approved_by)}"
+    echo "::notice::Merge guard: PR authored by $pr_author, not $bot_user${_approver_info} — skipping"
+    should_skip="true"
+  fi
+else
+  if [[ -n "$pr_author" && -n "$bot_user" && "$pr_author" == "$bot_user" ]]; then
+    echo "::warning::Self-filter: PR authored by $bot_user — skipping"
+    should_skip="true"
+  fi
 fi
 
 if [[ "${DRY_RUN:-false}" == "true" ]]; then
-  echo "::notice::DRY_RUN enabled"
+  echo "::notice::DRY_RUN is on — no actions will be taken"
   should_skip="true"
 fi
 
@@ -38,19 +48,10 @@ if [[ "$recent_runs" -ge "$max_actions" ]]; then
   should_skip="true"
 fi
 
-enabled="true"
-if [[ -f "${POLICY_FILE:-}" ]]; then
-  if [[ "$(yq e '.repo' "${POLICY_FILE}" 2>/dev/null)" != "null" ]]; then
-    enabled="$(yq e ".${action}.enabled // true" "${POLICY_FILE}")"
-  else
-    enabled="$(yq e ".defaults.${action}.enabled // true" "${POLICY_FILE}")"
-  fi
-fi
-
-if [[ "$enabled" == "false" ]]; then
-  echo "::notice::Action $action disabled by policy"
-  should_skip="true"
-fi
 
 echo "should_skip=$should_skip" >> "$GITHUB_OUTPUT"
-echo "::notice::Guard result: $should_skip"
+if [[ "$should_skip" == "true" ]]; then
+  echo "::notice::Guard: skipping action=$action pr=$pr_number"
+else
+  echo "::notice::Guard: all checks passed, proceeding with action=$action pr=$pr_number"
+fi

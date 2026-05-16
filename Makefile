@@ -57,10 +57,14 @@ ps: check-tools
 
 test:
 	@for f in scripts/*.sh tests/*.sh; do bash -n "$$f" || exit 1; done
-	@./tests/test-classify.sh
-	@./tests/test-guards.sh
-	@bash tests/test-merge-ci.sh
-	@./tests/test-integration.sh
+	@PATH="$(CURDIR)/tests/stubs:$$PATH" ANTHROPIC_API_KEY="" \
+	  ./tests/test-classify.sh && \
+	  PATH="$(CURDIR)/tests/stubs:$$PATH" ANTHROPIC_API_KEY="" \
+	  ./tests/test-guards.sh && \
+	  PATH="$(CURDIR)/tests/stubs:$$PATH" ANTHROPIC_API_KEY="" \
+	  bash tests/test-merge-ci.sh && \
+	  PATH="$(CURDIR)/tests/stubs:$$PATH" ANTHROPIC_API_KEY="" \
+	  ./tests/test-integration.sh
 
 typecheck:
 	@bash scripts/typecheck.sh all

@@ -19,15 +19,21 @@ assert_eq() {
 
 feed_link="$(jq -r '.feed_link' tests/payloads/review-requested.json)"
 repo_from_link="$(sed -nE 's|https://github.com/([^/]+/[^/]+)/pull/[0-9]+.*|\1|p' <<<"$feed_link" | head -n1)"
-assert_eq "repo extraction" "Zipstorm/spot-v2" "$repo_from_link"
+assert_eq "repo extraction from feed_link" "Zipstorm/spot-v2" "$repo_from_link"
 
 pr_from_link="$(sed -nE 's|.*/pull/([0-9]+).*|\1|p' <<<"$feed_link" | head -n1)"
-assert_eq "pr extraction" "42" "$pr_from_link"
+assert_eq "pr extraction from feed_link" "42" "$pr_from_link"
 
 target_repo="$(jq -r '.target_repo' tests/payloads/ci-passed.json)"
 action="$(jq -r '.action' tests/payloads/ci-passed.json)"
 assert_eq "payload repo" "Zipstorm/spot-v2" "$target_repo"
 assert_eq "payload action" "approve" "$action"
+
+approved_by="$(jq -r '.approved_by // ""' tests/payloads/approval-received.json)"
+assert_eq "approved_by present in approval payload" "tirlochanarora16" "$approved_by"
+
+missing_approved_by="$(jq -r '.approved_by // ""' tests/payloads/review-requested.json)"
+assert_eq "approved_by absent in non-approval payload" "" "$missing_approved_by"
 
 echo "Results: pass=$pass fail=$fail"
 [[ "$fail" -eq 0 ]]

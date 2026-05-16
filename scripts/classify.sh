@@ -12,6 +12,7 @@ feed_title="$(jq -r '.feed_title // ""' <<<"$payload")"
 feed_link="$(jq -r '.feed_link // ""' <<<"$payload")"
 explicit_action="$(jq -r '.action // ""' <<<"$payload")"
 pr_number="$(jq -r '.pr_number // ""' <<<"$payload")"
+approved_by="$(jq -r '.approved_by // ""' <<<"$payload")"
 
 target_repo="$(jq -r '.target_repo // ""' <<<"$payload")"
 if [[ -z "$target_repo" && -n "$feed_link" ]]; then
@@ -71,6 +72,7 @@ fi
   echo "pr_title=$pr_title"
   echo "target_repo=$target_repo"
   echo "pr_url=$pr_url"
+  echo "approved_by=$approved_by"
 } >> "$GITHUB_OUTPUT"
 
-echo "::notice::Classified $target_repo#$pr_number => $action | $pr_url"
+echo "::notice::Classified $target_repo#$pr_number => $action by $pr_author (trigger: $feed_title) | $pr_url"

@@ -17,17 +17,38 @@ check() {
   fi
 }
 
-author="botuser"
+should_skip() {
+  local action="$1" author="$2" bot="$3"
+  if [[ "$action" == "merge" ]]; then
+    if [[ "$author" != "$bot" ]]; then echo "true"; else echo "false"; fi
+  else
+    if [[ "$author" == "$bot" ]]; then echo "true"; else echo "false"; fi
+  fi
+}
+
 bot="botuser"
-if [[ "$author" == "$bot" ]]; then res="true"; else res="false"; fi
-check "self filter" "true" "$res"
 
-author="contributor"
-if [[ "$author" == "$bot" ]]; then res="true"; else res="false"; fi
-check "non self" "false" "$res"
+# Non-merge actions: skip own PRs
+check "review: skips own PR"       "true"  "$(should_skip review   botuser   $bot)"
+check "review: proceeds other PR"  "false" "$(should_skip review   contributor $bot)"
+check "approve: skips own PR"      "true"  "$(should_skip approve  botuser   $bot)"
+check "followup: skips own PR"     "true"  "$(should_skip followup botuser   $bot)"
 
-recent=21
-max=20
+# Merge: only proceeds on own PRs
+check "merge: proceeds on own PR"  "false" "$(should_skip merge    botuser   $bot)"
+check "merge: skips other PR"      "true"  "$(should_skip merge    contributor $bot)"
+
+# Merge guard log includes approver when present
+approved_by="tirlochanarora16"
+log_msg="PR authored by contributor, not botuser (approved by $approved_by) — skipping"
+check "merge guard log includes approver" "PR authored by contributor, not botuser (approved by tirlochanarora16) — skipping" "$log_msg"
+
+approved_by=""
+log_msg="PR authored by contributor, not botuser${approved_by:+ (approved by $approved_by)} — skipping"
+check "merge guard log without approver" "PR authored by contributor, not botuser — skipping" "$log_msg"
+
+# Rate limit
+recent=21; max=20
 if [[ "$recent" -ge "$max" ]]; then res="true"; else res="false"; fi
 check "rate limited" "true" "$res"
 

@@ -4,7 +4,7 @@ version: 1
 defaults:
   review:
     enabled: true
-    max_diff_lines: 5000
+    max_diff_lines: 2500
     post_as: COMMENT
     severity_block_threshold: major
     include_file_patterns:

@@ -60,4 +60,4 @@ fi
   echo "PROMPT_DIR=$prompt_dir"
 } >> "$GITHUB_ENV"
 
-echo "::notice::Policy resolved: $policy_file | prompts: $prompt_dir"
+echo "::notice::Using policy: $policy_file | prompts: $prompt_dir"

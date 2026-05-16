@@ -1,13 +1,32 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cd "$WORKSPACE"
-
 _lib="$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 [[ -f "$_lib" ]] || { echo "lib.sh not found — ensure scripts/lib.sh is committed" >&2; exit 1; }
 # shellcheck source=scripts/lib.sh
 # shellcheck disable=SC1091
 source "$_lib"
+
+# shellcheck disable=SC2016
+is_reviewer="$(gh pr view "$PR_NUMBER" --repo "$TARGET_REPO" --json reviewRequests \
+  --jq --arg me "${MY_GITHUB_USERNAME:-}" '[.reviewRequests[]? | select(.login == $me)] | length > 0')"
+
+pr_author="$(gh pr view "$PR_NUMBER" --repo "$TARGET_REPO" --json author --jq '.author.login')"
+author_whitelisted="false"
+if [[ -n "${AUTO_REVIEW_AUTHORS:-}" ]]; then
+  IFS=',' read -ra _authors <<< "$AUTO_REVIEW_AUTHORS"
+  for _a in "${_authors[@]}"; do
+    if [[ "$pr_author" == "${_a// /}" ]]; then
+      author_whitelisted="true"
+      break
+    fi
+  done
+fi
+
+if [[ "$is_reviewer" != "true" && "$author_whitelisted" != "true" ]]; then
+  echo "Not a requested reviewer and PR author not in AUTO_REVIEW_AUTHORS — skipping"
+  exit 0
+fi
 
 extract_json_payload() {
   local raw="$1"
@@ -36,12 +55,20 @@ severity_label() {
   esac
 }
 
-max_diff_lines="$(read_policy 'review.max_diff_lines')"
-[[ -z "$max_diff_lines" ]] && max_diff_lines=5000
+bash "$(dirname "${BASH_SOURCE[0]}")/setup-workspace.sh"
+_new_ws="$(grep '^WORKSPACE=' "${GITHUB_ENV:-/dev/null}" | tail -1 | cut -d= -f2-)"
+[[ -n "$_new_ws" ]] && { export WORKSPACE="$_new_ws"; cd "$WORKSPACE"; }
 
-diff_lines="$(gh pr diff "$PR_NUMBER" --repo "$TARGET_REPO" | wc -l | tr -d ' ')"
+max_diff_lines="$(read_policy 'review.max_diff_lines')"
+[[ -z "$max_diff_lines" ]] && max_diff_lines=2500
+
+diff_output="$(gh pr diff "$PR_NUMBER" --repo "$TARGET_REPO" 2>&1)" || {
+  gh pr comment "$PR_NUMBER" --repo "$TARGET_REPO" --body "Auto-review skipped: unable to fetch PR diff."
+  exit 0
+}
+diff_lines="$(wc -l <<<"$diff_output" | tr -d ' ')"
 if [[ "$diff_lines" -gt "$max_diff_lines" ]]; then
-  gh pr comment "$PR_NUMBER" --repo "$TARGET_REPO" --body "Warning: PR has $diff_lines diff lines, above auto-review limit $max_diff_lines."
+  gh pr comment "$PR_NUMBER" --repo "$TARGET_REPO" --body "This PR has $diff_lines diff lines which exceeds the auto-review limit of $max_diff_lines. Please split it into smaller focused PRs so each can be reviewed effectively."
   exit 0
 fi
 
@@ -120,7 +147,11 @@ if ! review_json="$(extract_json_payload "$raw_output")"; then
   exit 0
 fi
 
-head_sha="$(gh pr view "$PR_NUMBER" --repo "$TARGET_REPO" --json headRefOid --jq '.headRefOid')"
+head_sha="$(gh pr view "$PR_NUMBER" --repo "$TARGET_REPO" --json headRefOid --jq '.headRefOid // empty')"
+if [[ -z "$head_sha" ]]; then
+  gh pr comment "$PR_NUMBER" --repo "$TARGET_REPO" --body "Review complete but could not post inline comments: unable to resolve PR head SHA."
+  exit 0
+fi
 summary="$(jq -r '.summary // "No summary provided."' <<<"$review_json")"
 verdict="$(jq -r '.verdict // "NEEDS_DISCUSSION"' <<<"$review_json")"
 test_gaps="$(jq -r '.test_gaps // [] | if length == 0 then "none" else join("; ") end' <<<"$review_json")"
