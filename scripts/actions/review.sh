@@ -7,20 +7,16 @@ _lib="$(dirname "${BASH_SOURCE[0]}")/../shared/lib.sh"
 # shellcheck disable=SC1091
 source "$_lib"
 
+trap 'log ERROR "review.sh failed at line $LINENO (exit $?)"' ERR
+
 # shellcheck disable=SC2016
 is_reviewer="$(gh pr view "$PR_NUMBER" --repo "$TARGET_REPO" --json reviewRequests \
-  --jq --arg me "${MY_GITHUB_USERNAME:-}" '[.reviewRequests[]? | select(.login == $me)] | length > 0')"
+  | jq --arg me "${MY_GITHUB_USERNAME:-}" '[.reviewRequests[]? | select(.login == $me)] | length > 0')"
 
 pr_author="$(gh pr view "$PR_NUMBER" --repo "$TARGET_REPO" --json author --jq '.author.login')"
 author_whitelisted="false"
 if [[ -n "${AUTO_REVIEW_AUTHORS:-}" ]]; then
-  IFS=',' read -ra _authors <<< "$AUTO_REVIEW_AUTHORS"
-  for _a in "${_authors[@]}"; do
-    if [[ "$pr_author" == "${_a// /}" ]]; then
-      author_whitelisted="true"
-      break
-    fi
-  done
+  is_auto_review_author_for_repo "${TARGET_REPO:-}" "$pr_author" "$AUTO_REVIEW_AUTHORS" && author_whitelisted="true"
 fi
 
 is_own_pr="false"
@@ -31,9 +27,10 @@ if [[ "$is_own_pr" != "true" && "$is_reviewer" != "true" && "$author_whitelisted
   exit 0
 fi
 
-already_approved="$(gh pr view "$PR_NUMBER" --repo "$TARGET_REPO" --json reviews \
-  --jq --arg me "${MY_GITHUB_USERNAME:-}" \
-  '[.reviews[]? | select(.author.login == $me and .state == "APPROVED")] | length > 0' 2>/dev/null || echo false)"
+already_approved="$(gh pr view "$PR_NUMBER" --repo "$TARGET_REPO" --json reviews 2>/dev/null \
+  | jq --arg me "${MY_GITHUB_USERNAME:-}" \
+    '[.reviews[]? | select(.author.login == $me and .state == "APPROVED")] | length > 0' \
+  || echo false)"
 if [[ "$already_approved" == "true" ]]; then
   log SKIP "Already approved by ${MY_GITHUB_USERNAME} — skipping review"
   exit 0
@@ -70,6 +67,7 @@ bash "$(dirname "${BASH_SOURCE[0]}")/../shared/setup-workspace.sh"
 _new_ws="$(grep '^WORKSPACE=' "${GITHUB_ENV:-/dev/null}" | tail -1 | cut -d= -f2-)"
 [[ -n "$_new_ws" ]] && { export WORKSPACE="$_new_ws"; cd "$WORKSPACE"; }
 
+log INFO "Fetching diff for $TARGET_REPO#$PR_NUMBER"
 max_diff_lines="$(read_policy 'review.max_diff_lines')"
 [[ -z "$max_diff_lines" ]] && max_diff_lines=2500
 
@@ -78,11 +76,13 @@ diff_output="$(gh pr diff "$PR_NUMBER" --repo "$TARGET_REPO" 2>&1)" || {
   exit 0
 }
 diff_lines="$(wc -l <<<"$diff_output" | tr -d ' ')"
+log INFO "Diff fetched — $diff_lines lines"
 if [[ "$diff_lines" -gt "$max_diff_lines" ]]; then
   gh pr comment "$PR_NUMBER" --repo "$TARGET_REPO" --body "This PR has $diff_lines diff lines which exceeds the auto-review limit of $max_diff_lines. Please split it into smaller focused PRs so each can be reviewed effectively."
   exit 0
 fi
 
+log INFO "Fetching PR metadata"
 pr_json="$(gh pr view "$PR_NUMBER" --repo "$TARGET_REPO" --json title,author,additions,deletions,changedFiles)"
 pr_title="$(jq -r '.title' <<<"$pr_json")"
 pr_author="$(jq -r '.author.login' <<<"$pr_json")"
@@ -90,6 +90,7 @@ files_changed="$(jq -r '.changedFiles' <<<"$pr_json")"
 lines_added="$(jq -r '.additions' <<<"$pr_json")"
 lines_removed="$(jq -r '.deletions' <<<"$pr_json")"
 
+log INFO "Building review prompt (files=$files_changed, +$lines_added/-$lines_removed)"
 prompt_root="$(resolve_control_path "$PROMPT_DIR")"
 default_prompt_root="$GITHUB_WORKSPACE/config/prompts/defaults"
 
@@ -123,6 +124,8 @@ if [[ -d "$repo_skills_dir" ]]; then
   fi
 fi
 
+prompt+=$'\n\n## PR Diff\n\n```diff\n'"$diff_output"$'\n```\n'
+
 prompt+=$'\n\n## Response Format (Mandatory)\n'
 prompt+=$'Return ONLY valid JSON. Do not run gh commands directly.\n'
 prompt+=$'JSON schema:\n'
@@ -135,14 +138,18 @@ prompt+=$'    {"severity":"critical|major|minor|nit","path":"string","line":1,"t
 prompt+=$'  ]\n'
 prompt+=$'}\n'
 
-raw_output="$(call_llm "$prompt" "gh,git,cat,grep,find,head,tail,wc" 10)"
+log INFO "Calling LLM for review of $TARGET_REPO#$PR_NUMBER"
+raw_output="$(call_llm "$prompt" "cat,grep,find,head,tail" 10)" || true
 printf '%s\n' "$raw_output" > /tmp/claude-review-output.txt
 
+log INFO "LLM response received — parsing review JSON"
 if ! review_json="$(extract_json_payload "$raw_output")"; then
+  log WARN "Failed to parse structured review output — posting raw fallback"
   gh pr comment "$PR_NUMBER" --repo "$TARGET_REPO" --body "Review parsing fallback: unable to parse structured output.\n\n${raw_output:0:6000}"
   exit 0
 fi
 
+log INFO "Posting inline review comments"
 head_sha="$(gh pr view "$PR_NUMBER" --repo "$TARGET_REPO" --json headRefOid --jq '.headRefOid // empty')"
 if [[ -z "$head_sha" ]]; then
   gh pr comment "$PR_NUMBER" --repo "$TARGET_REPO" --body "Review complete but could not post inline comments: unable to resolve PR head SHA."
@@ -155,6 +162,7 @@ critical_count="$(jq -r '[.findings[]? | select(.severity == "critical")] | leng
 major_count="$(jq -r '[.findings[]? | select(.severity == "major")] | length' <<<"$review_json")"
 minor_count="$(jq -r '[.findings[]? | select(.severity == "minor")] | length' <<<"$review_json")"
 nit_count="$(jq -r '[.findings[]? | select(.severity == "nit")] | length' <<<"$review_json")"
+log INFO "Review findings: critical=$critical_count major=$major_count minor=$minor_count nit=$nit_count"
 
 fallback_findings=""
 finding_count="$(jq '.findings // [] | length' <<<"$review_json")"
@@ -210,6 +218,7 @@ fi
 summary_severity_text="$(severity_label "$summary_severity")"
 summary_body="$(printf 'Review Comment(Severity:%s)\n%s' "$summary_severity_text" "$summary_body")"
 
+log INFO "Submitting review verdict for $TARGET_REPO#$PR_NUMBER (own_pr=$is_own_pr)"
 if [[ "$critical_count" -gt 0 ]]; then
   if [[ "$is_own_pr" == "true" ]]; then
     gh pr comment "$PR_NUMBER" --repo "$TARGET_REPO" --body "$summary_body"
@@ -221,3 +230,4 @@ elif [[ "$major_count" -gt 0 || "$is_own_pr" == "true" ]]; then
 else
   gh pr review "$PR_NUMBER" --repo "$TARGET_REPO" --approve --body "$summary_body"
 fi
+log INFO "Review complete for $TARGET_REPO#$PR_NUMBER"

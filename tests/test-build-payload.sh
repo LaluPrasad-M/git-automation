@@ -144,12 +144,6 @@ build_action() {
         fi
         echo "skip"; return
       fi
-      if [[ "$action" == "synchronize" ]]; then
-        pr_author="$(jq -r '.payload.pull_request.user.login // empty' <<<"$event_json")"
-        is_draft="$(jq -r '.payload.pull_request.draft // false' <<<"$event_json")"
-        if [[ -n "${MY_GITHUB_USERNAME:-}" && "$pr_author" == "$MY_GITHUB_USERNAME" && "$is_draft" != "true" ]]; then echo "review"; return; fi
-        echo "skip"; return
-      fi
       echo "skip"
       ;;
     PullRequestReviewEvent)
@@ -185,8 +179,32 @@ build_action() {
       [[ -z "$pr_number" ]] && { echo "skip"; return; }
       echo "approve"
       ;;
+    PushEvent)
+      local ref branch pr_json pr_number pr_author is_draft
+      ref="$(jq -r '.payload.ref // ""' <<<"$event_json")"
+      branch="${ref#refs/heads/}"
+      [[ -z "$branch" || "$branch" == "$ref" ]] && { echo "skip"; return; }
+      [[ -z "${MY_GITHUB_USERNAME:-}" ]] && { echo "skip"; return; }
+      pr_json="$(gh pr list --repo "$repo" --head "$branch" --state open --json number,author,isDraft 2>/dev/null || echo '[]')"
+      pr_number="$(jq -r '.[0].number // empty' <<<"$pr_json")"
+      [[ -z "$pr_number" ]] && { echo "skip"; return; }
+      pr_author="$(jq -r '.[0].author.login // empty' <<<"$pr_json")"
+      is_draft="$(jq -r '.[0].isDraft // false' <<<"$pr_json")"
+      [[ "$pr_author" != "$MY_GITHUB_USERNAME" ]] && { echo "skip"; return; }
+      [[ "$is_draft" == "true" ]] && { echo "skip"; return; }
+      echo "review"
+      ;;
     *) echo "skip" ;;
   esac
+}
+
+# gh mock: returns $MOCK_PR_JSON when called with "pr list", else empty array
+gh() {
+  if [[ "${1:-}" == "pr" && "${2:-}" == "list" ]]; then
+    echo "${MOCK_PR_JSON:-[]}"
+  else
+    echo "[]"
+  fi
 }
 
 # --- PullRequestEvent: review_requested ---
@@ -223,15 +241,33 @@ AUTO_REVIEW_AUTHORS=""
 event="$(jq -nc '{type:"PullRequestEvent", payload:{action:"reopened", number:42, pull_request:{user:{login:"botuser"}, draft:false}}}')"
 check "PullRequestEvent reopened draft=false author=bot" "review" "$(build_action "$event")"
 
-# --- PullRequestEvent: synchronize ---
-event="$(jq -nc '{type:"PullRequestEvent", payload:{action:"synchronize", number:42, pull_request:{user:{login:"botuser"}, draft:false}}}')"
-check "PullRequestEvent synchronize draft=false author=bot" "review" "$(build_action "$event")"
+# --- PushEvent ---
+MOCK_PR_JSON='[{"number":42,"author":{"login":"botuser"},"isDraft":false}]'
+event="$(jq -nc '{type:"PushEvent", payload:{ref:"refs/heads/feature-x"}}')"
+check "PushEvent own branch non-draft PR" "review" "$(build_action "$event" "owner/repo")"
 
-event="$(jq -nc '{type:"PullRequestEvent", payload:{action:"synchronize", number:42, pull_request:{user:{login:"botuser"}, draft:true}}}')"
-check "PullRequestEvent synchronize draft=true author=bot" "skip" "$(build_action "$event")"
+MOCK_PR_JSON='[{"number":42,"author":{"login":"botuser"},"isDraft":true}]'
+event="$(jq -nc '{type:"PushEvent", payload:{ref:"refs/heads/feature-x"}}')"
+check "PushEvent own branch draft PR" "skip" "$(build_action "$event" "owner/repo")"
 
-event="$(jq -nc '{type:"PullRequestEvent", payload:{action:"synchronize", number:42, pull_request:{user:{login:"otheruser"}, draft:false}}}')"
-check "PullRequestEvent synchronize other author" "skip" "$(build_action "$event")"
+MOCK_PR_JSON='[{"number":42,"author":{"login":"otheruser"},"isDraft":false}]'
+event="$(jq -nc '{type:"PushEvent", payload:{ref:"refs/heads/feature-x"}}')"
+check "PushEvent other author" "skip" "$(build_action "$event" "owner/repo")"
+
+MOCK_PR_JSON='[]'
+event="$(jq -nc '{type:"PushEvent", payload:{ref:"refs/heads/feature-x"}}')"
+check "PushEvent no open PR" "skip" "$(build_action "$event" "owner/repo")"
+
+MOCK_PR_JSON='[{"number":42,"author":{"login":"botuser"},"isDraft":false}]'
+event="$(jq -nc '{type:"PushEvent", payload:{ref:"refs/tags/v1.0"}}')"
+check "PushEvent tag ref (not a branch)" "skip" "$(build_action "$event" "owner/repo")"
+
+MY_GITHUB_USERNAME=""
+MOCK_PR_JSON='[{"number":42,"author":{"login":"botuser"},"isDraft":false}]'
+event="$(jq -nc '{type:"PushEvent", payload:{ref:"refs/heads/feature-x"}}')"
+check "PushEvent MY_GITHUB_USERNAME not set" "skip" "$(build_action "$event" "owner/repo")"
+MY_GITHUB_USERNAME="botuser"
+MOCK_PR_JSON=""
 
 # --- PullRequestEvent: unmatched action ---
 event="$(jq -nc '{type:"PullRequestEvent", payload:{action:"closed", number:42, pull_request:{user:{login:"botuser"}, draft:false}}}')"

@@ -29,11 +29,13 @@ policy_file="$listener_dir/policy.yml"
 if [[ ! -f "$policy_file" ]]; then
   policy_file="config/sentinel.yml"
 fi
+policy_file="$(cd "$(dirname "$policy_file")" && pwd)/$(basename "$policy_file")"
 
 prompt_dir="$listener_dir/prompts"
 if [[ ! -d "$prompt_dir" ]]; then
   prompt_dir="config/prompts/defaults"
 fi
+prompt_dir="$(cd "$prompt_dir" && pwd)"
 
 if [[ -n "${TARGET_REPOS:-}" ]]; then
   if ! repo_in_allowlist "$target_repo" "$TARGET_REPOS"; then

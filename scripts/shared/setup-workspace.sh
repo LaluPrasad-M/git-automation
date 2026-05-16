@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+trap 'echo "[ERROR] setup-workspace.sh failed at line $LINENO (exit $?)" >&2' ERR
+
 work_dir="${WORK_DIR:-/tmp/sentinel-workspace}"
 target_dir="$work_dir/target"
 

@@ -10,7 +10,7 @@ You are reviewing PR #{{PR_NUMBER}} in {{TARGET_REPO}}.
 
 ## Process
 
-1. Read the full diff: `gh pr diff {{PR_NUMBER}} --repo {{TARGET_REPO}}`
+1. The full diff is provided below under **PR Diff** — do not run `gh pr diff`
 2. If skill files are provided below, use them as your review checklist — they define what to look for and how to evaluate it
 3. If no skill files are provided, apply general engineering judgment across correctness, security, and test coverage
 4. Prioritise findings by severity: critical → major → minor → nit

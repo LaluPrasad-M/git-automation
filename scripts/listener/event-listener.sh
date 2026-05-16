@@ -98,14 +98,6 @@ build_payload() {
           fi
         fi
       fi
-      if [[ "$action" == "synchronize" ]]; then
-        pr_author="$(jq -r '.payload.pull_request.user.login // empty' <<<"$event_json")"
-        is_draft="$(jq -r '.payload.pull_request.draft // false' <<<"$event_json")"
-        if [[ -n "${MY_GITHUB_USERNAME:-}" && "$pr_author" == "$MY_GITHUB_USERNAME" && "$is_draft" != "true" ]]; then
-          jq -nc --arg repo "$repo" --arg pr "$pr_number" --arg t "code pushed to PR #$pr_number" '{event_type:"pr_notification", client_payload:{target_repo:$repo, pr_number:$pr, feed_title:$t, action:"review", source:"docker-listener"}}'
-          return 0
-        fi
-      fi
       return 1
       ;;
     PullRequestReviewEvent)
@@ -152,6 +144,23 @@ build_payload() {
       jq -nc --arg repo "$repo" --arg pr "$pr_number" --arg t "checks completed on PR #$pr_number" '{event_type:"pr_ci_completed", client_payload:{target_repo:$repo, pr_number:$pr, feed_title:$t, action:"approve", source:"docker-listener"}}'
       return 0
       ;;
+    PushEvent)
+      ref="$(jq -r '.payload.ref // ""' <<<"$event_json")"
+      branch="${ref#refs/heads/}"
+      [[ -z "$branch" || "$branch" == "$ref" ]] && return 1
+      if [[ -z "${MY_GITHUB_USERNAME:-}" ]]; then return 1; fi
+      pr_json="$(gh pr list --repo "$repo" --head "$branch" --state open \
+        --json number,author,isDraft 2>/dev/null || echo '[]')"
+      pr_number="$(jq -r '.[0].number // empty' <<<"$pr_json")"
+      [[ -z "$pr_number" ]] && return 1
+      pr_author="$(jq -r '.[0].author.login // empty' <<<"$pr_json")"
+      is_draft="$(jq -r '.[0].isDraft // false' <<<"$pr_json")"
+      [[ "$pr_author" != "$MY_GITHUB_USERNAME" ]] && return 1
+      [[ "$is_draft" == "true" ]] && return 1
+      jq -nc --arg repo "$repo" --arg pr "$pr_number" --arg t "code pushed to PR #$pr_number" \
+        '{event_type:"pr_notification", client_payload:{target_repo:$repo, pr_number:$pr, feed_title:$t, action:"review", source:"docker-listener"}}'
+      return 0
+      ;;
     *)
       return 1
       ;;
@@ -176,7 +185,8 @@ while true; do
   for repo in "${repos[@]}"; do
     [[ -z "$repo" ]] && continue
 
-    state_file="$state_dir/${repo//\//__}.last"
+    state_file="$state_dir/$repo.last"
+    mkdir -p "$(dirname "$state_file")"
     last_id=""
     [[ -f "$state_file" ]] && last_id="$(cat "$state_file")"
 
@@ -209,9 +219,19 @@ while true; do
         if [[ -n "$payloads" ]]; then
           while IFS= read -r payload; do
             [[ -z "$payload" ]] && continue
-            if ! bash scripts/listener/run-dispatch-local.sh "$payload"; then
-              log WARN "Dispatch failed for $repo event $(jq -r '.id // "unknown"' <<<"$event")"
+            pr_number="$(jq -r '.client_payload.pr_number // ""' <<<"$payload")"
+            lock_file="$state_dir/$repo/pr-${pr_number}.lock"
+            if [[ -n "$pr_number" && -f "$lock_file" ]]; then
+              log SKIP "Review already in progress for $repo#$pr_number — skipping"
+              continue
             fi
+            [[ -n "$pr_number" ]] && touch "$lock_file"
+            (
+              if ! bash scripts/listener/run-dispatch-local.sh "$payload"; then
+                log WARN "Dispatch failed for $repo event $(jq -r '.id // "unknown"' <<<"$event")"
+              fi
+              [[ -n "$pr_number" ]] && rm -f "$lock_file"
+            ) &
           done <<<"$payloads"
         fi
       done < <(tac "$new_events_file")

@@ -7,6 +7,8 @@ _lib="$(dirname "${BASH_SOURCE[0]}")/../shared/lib.sh"
 # shellcheck disable=SC1091
 source "$_lib"
 
+trap 'log ERROR "thread-followup.sh failed at line $LINENO (exit $?)"' ERR
+
 owner="${TARGET_REPO%/*}"
 repo="${TARGET_REPO#*/}"
 bot_user="${MY_GITHUB_USERNAME}"
@@ -74,9 +76,10 @@ record_exception() {
     >> "$log_file"
 }
 
-already_approved="$(gh pr view "$PR_NUMBER" --repo "$TARGET_REPO" --json reviews \
-  --jq --arg me "$bot_user" \
-  '[.reviews[]? | select(.author.login == $me and .state == "APPROVED")] | length > 0' 2>/dev/null || echo false)"
+already_approved="$(gh pr view "$PR_NUMBER" --repo "$TARGET_REPO" --json reviews 2>/dev/null \
+  | jq --arg me "$bot_user" \
+    '[.reviews[]? | select(.author.login == $me and .state == "APPROVED")] | length > 0' \
+  || echo false)"
 if [[ "$already_approved" == "true" ]]; then
   log SKIP "Already approved by $bot_user — skipping follow-up"
   exit 0

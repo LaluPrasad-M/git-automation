@@ -5,6 +5,8 @@ _lib="$(dirname "${BASH_SOURCE[0]}")/../shared/lib.sh"
 # shellcheck disable=SC1091
 source "$_lib"
 
+trap 'log ERROR "run-dispatch-local.sh failed at line $LINENO (exit $?)"' ERR
+
 if [[ $# -lt 1 ]]; then
   echo "Usage: $0 '<client_payload_json>'" >&2
   exit 2
@@ -77,9 +79,10 @@ if [[ "$action" == "review" || "$action" == "followup" ]]; then
     : # allowed — own PR review
   else
     # shellcheck disable=SC2016
-    _is_reviewer="$(gh pr view "$pr_number" --repo "$target_repo" --json reviewRequests \
-      --jq --arg me "${MY_GITHUB_USERNAME:-}" \
-      '[.reviewRequests[]? | select(.login == $me)] | length > 0' 2>/dev/null || echo false)"
+    _is_reviewer="$(gh pr view "$pr_number" --repo "$target_repo" --json reviewRequests 2>/dev/null \
+      | jq --arg me "${MY_GITHUB_USERNAME:-}" \
+        '[.reviewRequests[]? | select(.login == $me)] | length > 0' \
+      || echo false)"
     _author_whitelisted="false"
     if [[ -n "${AUTO_REVIEW_AUTHORS:-}" ]]; then
       is_auto_review_author_for_repo "$target_repo" "$pr_author" "$AUTO_REVIEW_AUTHORS" && _author_whitelisted="true"
