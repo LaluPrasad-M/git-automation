@@ -100,7 +100,7 @@ if [[ -z "$candidates" ]]; then
   exit 0
 fi
 
-bash "$(dirname "${BASH_SOURCE[0]}")/setup-workspace.sh"
+bash "$(dirname "${BASH_SOURCE[0]}")/../shared/setup-workspace.sh"
 _new_ws="$(grep '^WORKSPACE=' "${GITHUB_ENV:-/dev/null}" | tail -1 | cut -d= -f2-)"
 [[ -n "$_new_ws" ]] && { export WORKSPACE="$_new_ws"; cd "$WORKSPACE"; }
 

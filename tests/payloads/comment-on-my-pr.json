@@ -1,5 +1,5 @@
 {
   "feed_title": "teammate commented on PR #37",
-  "feed_link": "https://github.com/Zipstorm/spot-v2/pull/37",
-  "target_repo": "Zipstorm/spot-v2"
+  "feed_link": "https://github.com/owner/repo/pull/37",
+  "target_repo": "owner/repo"
 }

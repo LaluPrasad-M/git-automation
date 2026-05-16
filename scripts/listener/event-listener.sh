@@ -27,21 +27,13 @@ if ! command -v jq >/dev/null 2>&1; then
   exit 1
 fi
 
-if [[ -z "${TARGET_REPOS_JSON:-}" ]]; then
-  echo "TARGET_REPOS_JSON is required" >&2
+if [[ -z "${TARGET_REPOS:-}" ]]; then
+  echo "TARGET_REPOS is required" >&2
   exit 1
 fi
 
 parse_target_repos() {
   local raw="$1"
-
-  # Preferred format: JSON array, e.g. ["org/repo-a","org/repo-b"].
-  if jq -e 'type == "array"' >/dev/null 2>&1 <<<"$raw"; then
-    jq -r '.[]' <<<"$raw"
-    return 0
-  fi
-
-  # Backward-compatible format: comma-separated values.
   tr ',' '\n' <<<"$raw" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | sed '/^$/d'
 }
 
@@ -169,7 +161,7 @@ startup_repos=()
 while IFS= read -r repo; do
   [[ -z "$repo" ]] && continue
   startup_repos+=("$repo")
-done < <(parse_target_repos "$TARGET_REPOS_JSON")
+done < <(parse_target_repos "$TARGET_REPOS")
 
 repo_count="${#startup_repos[@]}"
 if [[ -n "${POLL_INTERVAL_SECONDS:-}" ]]; then
@@ -278,12 +270,12 @@ while true; do
   repos=()
   while IFS= read -r repo; do
     repos+=("$repo")
-  done < <(parse_target_repos "$TARGET_REPOS_JSON")
+  done < <(parse_target_repos "$TARGET_REPOS")
 
   if [[ "${#repos[@]}" -eq 0 ]]; then
     log_msg ERROR no_repositories \
       "cycle=$cycle" \
-      "target_repos_raw=${TARGET_REPOS_JSON}"
+      "target_repos_raw=${TARGET_REPOS}"
     sleep "$poll_interval"
     continue
   fi
@@ -322,7 +314,7 @@ while true; do
       while IFS= read -r event; do
         payload="$(build_payload "$event" "$repo" 2>/dev/null || true)"
         if [[ -n "$payload" ]]; then
-          if ! bash scripts/run-dispatch-local.sh "$payload"; then
+          if ! bash scripts/listener/run-dispatch-local.sh "$payload"; then
             echo "::warning::Dispatch failed for $repo event $(jq -r '.id // "unknown"' <<<"$event")"
           fi
         fi
