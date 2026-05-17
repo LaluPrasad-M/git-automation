@@ -19,7 +19,8 @@ GitHub Event → classify → guard → policy → action
 | `approve`  | Approves when CI passes and no unresolved threads remain |
 | `merge`    | Merges your own PRs when all gates clear — fully deterministic, no Claude |
 
-**Review triggers:** added as reviewer, or PR opened by a whitelisted author  
+**Review triggers:** added as reviewer, PR opened/pushed by a whitelisted author, or your own PR opened/pushed  
+**Own PR behaviour:** always posts a comment (never approves or requests changes on your own PRs)  
 **Merge scope:** only your own PRs (`MY_GITHUB_USERNAME` is the PR author)
 
 ---
@@ -52,6 +53,8 @@ See [SETUP_GUIDE.md](SETUP_GUIDE.md) for full setup instructions.
 | `DRY_RUN` | No | `true` to suppress all write operations |
 | `POLL_INTERVAL_SECONDS` | No | Override poll interval (default: 60s) |
 | `LLM_PROVIDER` | No | `anthropic` (default) or `openai` |
+| `ANTHROPIC_MODEL` | No | Anthropic model, default `claude-sonnet-4-6` |
+| `MAX_TURNS` | No | Max LLM tool-call turns per review (default: 5) |
 | `OPENAI_API_KEY` | No | Required when `LLM_PROVIDER=openai` |
 | `OPENAI_MODEL` | No | OpenAI model, default `gpt-4o` |
 
@@ -119,8 +122,7 @@ tests/                            # shell test suite
 
 ## Safety
 
-- **Self-filter** — never reviews or merges its own PRs
-- **Rate limiting** — configurable cap on actions per hour
+- **Self-filter** — own PRs are reviewed (comment-only); never approves or requests changes on your own work; followup/approve skipped on own PRs
 - **Dry-run mode** — suppress all writes for safe testing
 - **do-not-merge label** — respected unconditionally
 - **CI gating** — approve and merge only when checks pass

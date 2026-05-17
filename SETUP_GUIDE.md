@@ -51,9 +51,14 @@ git-listeners/
 description: Expert frontend reviewer for React and TypeScript changes
 ```
 
-**LLM provider** — defaults to Anthropic. To use OpenAI:
+**LLM provider** — defaults to Anthropic (`claude-sonnet-4-6`). Override model or switch provider in `.env`:
 
 ```bash
+# Anthropic (default)
+ANTHROPIC_MODEL=claude-sonnet-4-6   # change to any supported Claude model
+MAX_TURNS=5                         # max tool-call turns per review
+
+# Switch to OpenAI
 LLM_PROVIDER=openai
 OPENAI_API_KEY=sk-...
 OPENAI_MODEL=gpt-4o
