@@ -193,10 +193,10 @@ if [[ "$finding_count" -gt 0 ]]; then
 
     if [[ -n "$path" && "$path" != "null" && "$line" =~ ^[0-9]+$ && "$line" -gt 0 ]]; then
       if ! gh_post_inline_comment "$TARGET_REPO" "$PR_NUMBER" "$head_sha" "$path" "$line" "$body" >/dev/null 2>&1; then
-        fallback_findings+="$(printf '- [%s] %s:%s - %s\n' "$severity" "$path" "$line" "$title")"
+        fallback_findings+="$(printf -- '- [%s] %s:%s - %s\n' "$severity" "$path" "$line" "$title")"
       fi
     else
-      fallback_findings+="$(printf '- [%s] %s\n' "$severity" "$title")"
+      fallback_findings+="$(printf -- '- [%s] %s\n' "$severity" "$title")"
     fi
   done < <(jq -c '.findings // [] | .[]' <<<"$review_json")
 fi
