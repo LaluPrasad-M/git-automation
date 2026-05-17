@@ -126,7 +126,7 @@ $file_diff
 
 Return ONLY JSON: {\"fixed\": true|false, \"reason\": \"...\"}."
 
-    verify_raw="$(call_llm "$verify_prompt" "cat,grep" 4)"
+    verify_raw="$(call_llm "$verify_prompt" "cat,grep" "${MAX_TURNS:-5}")"
     if verify_json="$(extract_json_payload "$verify_raw")"; then
       fixed="$(jq -r '.fixed // false' <<<"$verify_json")"
       reason="$(jq -r '.reason // "No reason provided"' <<<"$verify_json")"
@@ -149,7 +149,7 @@ $latest_body
 
 Return ONLY JSON: {\"accepted\": true|false, \"reason\": \"...\", \"learning\": \"...\"}."
 
-    validate_raw="$(call_llm "$validate_prompt" "cat,grep" 4)"
+    validate_raw="$(call_llm "$validate_prompt" "cat,grep" "${MAX_TURNS:-5}")"
     if validate_json="$(extract_json_payload "$validate_raw")"; then
       accepted="$(jq -r '.accepted // false' <<<"$validate_json")"
       reason="$(jq -r '.reason // "No reason provided"' <<<"$validate_json")"

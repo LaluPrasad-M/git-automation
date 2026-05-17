@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -euo pipefail
 
 _logging="$(dirname "${BASH_SOURCE[0]}")/logging.sh"
 # shellcheck source=utils/logging.sh
@@ -37,6 +38,8 @@ _repo_in_allowlist() {
 
 load_policy() {
   local target_repo="$1"
+  [[ -n "${GITHUB_OUTPUT:-}" ]] || { log ERROR "load_policy: GITHUB_OUTPUT is unset"; return 1; }
+  [[ -n "${GITHUB_ENV:-}" ]]    || { log ERROR "load_policy: GITHUB_ENV is unset"; return 1; }
   local listener_dir="git-listeners/${target_repo}"
 
   local policy_file="$listener_dir/policy.yml"

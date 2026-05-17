@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -euo pipefail
 
 trim_spaces() {
   local value="$1"

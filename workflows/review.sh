@@ -23,6 +23,7 @@ source "$_root/services/ai/response_parser.sh"
 
 trap 'log ERROR "review.sh failed at line $LINENO (exit $?)"' ERR
 
+log INFO "Checking reviewer eligibility for $TARGET_REPO#$PR_NUMBER"
 is_reviewer="$(gh_get_pr "$TARGET_REPO" "$PR_NUMBER" "reviewRequests" \
   | jq --arg me "${MY_GITHUB_USERNAME:-}" '[.reviewRequests[]? | select(.login == $me)] | length > 0')"
 
@@ -34,12 +35,14 @@ fi
 
 is_own_pr="false"
 [[ -n "${MY_GITHUB_USERNAME:-}" && "$pr_author" == "$MY_GITHUB_USERNAME" ]] && is_own_pr="true"
+log INFO "Eligibility — own_pr=$is_own_pr is_reviewer=$is_reviewer author_whitelisted=$author_whitelisted"
 
 if [[ "$is_own_pr" != "true" && "$is_reviewer" != "true" && "$author_whitelisted" != "true" ]]; then
   log SKIP "Not a requested reviewer and PR author not in AUTO_REVIEW_AUTHORS — skipping"
   exit 0
 fi
 
+log INFO "Checking for prior approvals on $TARGET_REPO#$PR_NUMBER"
 already_approved="$(gh_get_pr "$TARGET_REPO" "$PR_NUMBER" "reviews" 2>/dev/null \
   | jq --arg me "${MY_GITHUB_USERNAME:-}" \
     '[.reviews[]? | select(.author.login == $me and .state == "APPROVED")] | length > 0' \
@@ -49,6 +52,7 @@ if [[ "$already_approved" == "true" ]]; then
   exit 0
 fi
 
+log INFO "Setting up git workspace"
 bash "$_root/services/git/workspace_service.sh"
 _new_ws="$(grep '^WORKSPACE=' "${GITHUB_ENV:-/dev/null}" | tail -1 | cut -d= -f2-)"
 [[ -n "$_new_ws" ]] && { export WORKSPACE="$_new_ws"; cd "$WORKSPACE"; }
@@ -88,6 +92,7 @@ prompt="${prompt//\{\{PR_NUMBER\}\}/$PR_NUMBER}"
 prompt="${prompt//\{\{TARGET_REPO\}\}/$TARGET_REPO}"
 prompt="${prompt//\{\{PR_TITLE\}\}/$pr_title}"
 prompt="${prompt//\{\{PR_AUTHOR\}\}/$pr_author}"
+prompt="${prompt//\{\{IS_OWN_PR\}\}/$is_own_pr}"
 prompt="${prompt//\{\{FILES_CHANGED\}\}/$files_changed}"
 prompt="${prompt//\{\{LINES_ADDED\}\}/$lines_added}"
 prompt="${prompt//\{\{LINES_REMOVED\}\}/$lines_removed}"
@@ -96,10 +101,16 @@ repo_skills_dir="$prompt_root/review"
 if [[ -d "$repo_skills_dir" ]]; then
   skill_manifest="$(build_skill_manifest "$repo_skills_dir" "review.md")"
   if [[ -n "$skill_manifest" ]]; then
+    skill_count="$(grep -c '^-' <<<"$skill_manifest" || true)"
+    log INFO "Loading $skill_count skill file(s) from $repo_skills_dir"
     prompt+=$'\n\n## Available Skill Files\n'
     prompt+="Read only the skill files relevant to the files changed in this PR. Use \`cat\` to read them from: $repo_skills_dir/"$'\n'
     prompt+="$skill_manifest"
+  else
+    log INFO "No skill files found in $repo_skills_dir"
   fi
+else
+  log INFO "No skills directory at $repo_skills_dir — using base prompt only"
 fi
 
 prompt+=$'\n\n## PR Diff\n\n```diff\n'"$diff_output"$'\n```\n'
@@ -116,18 +127,21 @@ prompt+=$'    {"severity":"critical|major|minor|nit","path":"string","line":1,"t
 prompt+=$'  ]\n'
 prompt+=$'}\n'
 
-log INFO "Calling LLM for review of $TARGET_REPO#$PR_NUMBER"
-raw_output="$(call_llm "$prompt" "cat,grep,find,head,tail" 10)" || true
+prompt_lines="$(wc -l <<<"$prompt" | tr -d ' ')"
+_max_turns="${MAX_TURNS:-5}"
+log INFO "Calling LLM for review of $TARGET_REPO#$PR_NUMBER (prompt=${prompt_lines} lines, max_turns=${_max_turns})"
+raw_output="$(call_llm "$prompt" "cat,grep,find,head,tail" "$_max_turns")" || true
 printf '%s\n' "$raw_output" > /tmp/claude-review-output.txt
 
-log INFO "LLM response received — parsing review JSON"
+response_lines="$(wc -l <<<"$raw_output" | tr -d ' ')"
+log INFO "LLM response received (${response_lines} lines) — parsing review JSON"
 if ! review_json="$(extract_json_payload "$raw_output")"; then
   log WARN "Failed to parse structured review output — posting raw fallback"
   gh_post_pr_comment "$TARGET_REPO" "$PR_NUMBER" "Review parsing fallback: unable to parse structured output.\n\n${raw_output:0:6000}"
   exit 0
 fi
 
-log INFO "Posting inline review comments"
+log INFO "Resolving PR head SHA for inline comments"
 head_sha="$(gh_get_pr "$TARGET_REPO" "$PR_NUMBER" "headRefOid" | jq -r '.headRefOid // empty')"
 if [[ -z "$head_sha" ]]; then
   gh_post_pr_comment "$TARGET_REPO" "$PR_NUMBER" "Review complete but could not post inline comments: unable to resolve PR head SHA."
@@ -140,16 +154,20 @@ critical_count="$(jq -r '[.findings[]? | select(.severity == "critical")] | leng
 major_count="$(jq -r '[.findings[]? | select(.severity == "major")] | length' <<<"$review_json")"
 minor_count="$(jq -r '[.findings[]? | select(.severity == "minor")] | length' <<<"$review_json")"
 nit_count="$(jq -r '[.findings[]? | select(.severity == "nit")] | length' <<<"$review_json")"
-log INFO "Review findings: critical=$critical_count major=$major_count minor=$minor_count nit=$nit_count"
+log INFO "Review findings: critical=$critical_count major=$major_count minor=$minor_count nit=$nit_count verdict=$verdict"
 
 fallback_findings=""
 finding_count="$(jq '.findings // [] | length' <<<"$review_json")"
+finding_idx=0
 if [[ "$finding_count" -gt 0 ]]; then
+  log INFO "Posting $finding_count inline finding(s)"
   while IFS= read -r finding; do
+    finding_idx=$((finding_idx + 1))
     severity="$(jq -r '.severity // "minor"' <<<"$finding")"
     path="$(jq -r '.path // ""' <<<"$finding")"
     line="$(jq -r '.line // 0' <<<"$finding")"
     title="$(jq -r '.title // "Untitled finding"' <<<"$finding")"
+    log INFO "  [$finding_idx/$finding_count] $severity — ${path}:${line} — $title"
     details="$(jq -r '.details // ""' <<<"$finding")"
     recommendation="$(jq -r '.recommendation // ""' <<<"$finding")"
 

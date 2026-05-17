@@ -24,5 +24,5 @@ gh_reply_to_review_comment() {
   local repo="$1" pr="$2" in_reply_to="$3" body="$4"
   gh api "repos/$repo/pulls/$pr/comments" \
     -f body="$body" \
-    -F in_reply_to="$in_reply_to"
+    -F in_reply_to="$in_reply_to" >/dev/null
 }

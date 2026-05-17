@@ -81,7 +81,7 @@ build_payload() {
         return 0
       fi
       if [[ "$action" == "opened" || "$action" == "reopened" ]]; then
-        pr_author="$(jq -r '.payload.pull_request.user.login // empty' <<<"$event_json")"
+        pr_author="$(jq -r '(.payload.pull_request.user.login // .actor.login) // empty' <<<"$event_json")"
         is_draft="$(jq -r '.payload.pull_request.draft // false' <<<"$event_json")"
         [[ "$is_draft" == "true" ]] && return 1
         if [[ -n "${MY_GITHUB_USERNAME:-}" && "$pr_author" == "$MY_GITHUB_USERNAME" ]]; then
@@ -221,7 +221,7 @@ while true; do
               log SKIP "Review already in progress for $repo#$pr_number — skipping"
               continue
             fi
-            [[ -n "$pr_number" ]] && touch "$lock_file"
+            if [[ -n "$pr_number" ]]; then mkdir -p "$(dirname "$lock_file")" && touch "$lock_file"; fi
             (
               if ! bash "$_root/workflows/dispatch.sh" "$payload"; then
                 log WARN "Dispatch failed for $repo event $(jq -r '.id // "unknown"' <<<"$event")"

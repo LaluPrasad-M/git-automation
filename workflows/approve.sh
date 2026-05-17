@@ -76,7 +76,7 @@ if [[ -d "$repo_skills_dir" ]]; then
   fi
 fi
 
-decision="$(call_llm "$prompt" "gh,git,cat,grep" 6 | tail -n 1)"
+decision="$(call_llm "$prompt" "gh,git,cat,grep" "${MAX_TURNS:-5}" | tail -n 1)"
 if grep -q "DECISION: APPROVE" <<<"$decision"; then
   gh_post_pr_review_approve "$TARGET_REPO" "$PR_NUMBER" "Auto-approved by Claude Git Sentinel after CI and quality checks."
 elif grep -q "DECISION: COMMENT - " <<<"$decision"; then
