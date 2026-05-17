@@ -4,6 +4,10 @@ set -euo pipefail
 pass=0
 fail=0
 
+_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck disable=SC1091
+source "$_root/services/ai/response_parser.sh"
+
 check() {
   local name="$1" expected="$2" actual="$3"
   if [[ "$expected" == "$actual" ]]; then echo "PASS: $name"; pass=$((pass+1))
@@ -13,16 +17,6 @@ check() {
 # ---------------------------------------------------------------------------
 # Group 1: severity_label
 # ---------------------------------------------------------------------------
-
-severity_label() {
-  case "$1" in
-    critical) echo "Critical" ;;
-    major) echo "Major" ;;
-    minor) echo "Minor" ;;
-    nit) echo "Nit" ;;
-    *) echo "Minor" ;;
-  esac
-}
 
 check "severity critical" "Critical" "$(severity_label "critical")"
 check "severity major" "Major" "$(severity_label "major")"
@@ -34,23 +28,6 @@ check "severity empty defaults to Minor" "Minor" "$(severity_label "")"
 # ---------------------------------------------------------------------------
 # Group 2: extract_json_payload
 # ---------------------------------------------------------------------------
-
-extract_json_payload() {
-  local raw="$1"
-  if jq -e . >/dev/null 2>&1 <<<"$raw"; then
-    printf '%s' "$raw"
-    return 0
-  fi
-
-  local fenced
-  fenced="$(printf '%s' "$raw" | awk '/```json/{flag=1;next}/```/{if(flag){flag=0;exit}}flag')"
-  if [[ -n "$fenced" ]] && jq -e . >/dev/null 2>&1 <<<"$fenced"; then
-    printf '%s' "$fenced"
-    return 0
-  fi
-
-  return 1
-}
 
 valid_json='{"verdict":"APPROVE_READY","findings":[]}'
 check "valid JSON returned as-is" "$valid_json" "$(extract_json_payload "$valid_json")"

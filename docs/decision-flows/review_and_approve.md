@@ -27,8 +27,8 @@ classify → guards (self-filter) → reviewer/whitelist check → policy → re
 2. Clone target repo if not already present, otherwise fetch latest.
 3. Check diff size against policy limit.
 4. Fetch PR metadata (title, author, file count, additions, deletions).
-5. Load review instructions from `git-listeners/<owner>/<repo>/prompts/review/review.md` → fallback `config/prompts/defaults/review/review.md`.
-6. If skill files exist in `git-listeners/<owner>/<repo>/prompts/review/`, list them with descriptions. Claude reads only the ones relevant to the changed files using `cat`.
+5. Load review template from `config/prompts/review/template/review.md` (global; not overridable per repo).
+6. If skill files exist in `git-listeners/<owner>/<repo>/review/skills/`, use them as the review checklist. If none, fall back to `config/prompts/review/skills/` defaults. Claude reads relevant ones using `cat`.
 7. Call Claude with tools: `gh, git, cat, grep, find, head, tail, wc` (max 10 turns).
 8. Parse JSON response: `summary`, `verdict`, `test_gaps`, `findings[]`.
 9. Post each finding as an inline PR comment (path + line) where possible; fall back to summary comment.
@@ -77,9 +77,8 @@ classify → guards (skip own PRs) → policy → approve.sh (API checks only, n
 2. Check all CI checks pass.
 3. Query review threads via GraphQL, check for unresolved sentinel threads.
 4. Validate required checks are present.
-5. Load approve instructions from `git-listeners/<owner>/<repo>/prompts/approve/approve.md` → fallback `config/prompts/defaults/approve/approve.md`.
-6. If skill files exist in `git-listeners/<owner>/<repo>/prompts/approve/`, list them with descriptions. Claude reads relevant ones using `cat`.
-7. Call Claude with tools: `gh, git, cat, grep` (max 6 turns).
+5. Load approve template from `config/prompts/approve/template/approve.md` (global; not overridable per repo).
+6. Call Claude with tools: `gh, cat, grep` (default 5 turns).
 8. Apply decision:
    - `DECISION: APPROVE` → post GitHub approval review
    - `DECISION: COMMENT - <reason>` → post non-blocking comment, leave PR unapproved

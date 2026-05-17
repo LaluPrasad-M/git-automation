@@ -11,4 +11,4 @@ services:
       - GITHUB_WORKSPACE=/app
     volumes:
       - ./:/app
-    command: bash scripts/listener/event-listener.sh
+    command: bash commands/listen.sh

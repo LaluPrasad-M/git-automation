@@ -18,8 +18,8 @@ To force a replay: delete `.state/event-listener/<owner>/<repo>.last` and restar
 Look for an `[ERROR]` line immediately before the `[WARN] Dispatch failed` — it will include the script name and line number. Common causes:
 
 - **`review.sh failed at line N`** — LLM call failed or timed out. Check `ANTHROPIC_API_KEY` is set and valid. Increase `MAX_TURNS` if reviews are hitting the turn limit.
-- **`setup-workspace.sh failed at line N`** — clone or checkout failed. Verify `GH_TOKEN` has `contents: read` on the target repo.
-- **`load-policy.sh` repo not in allowlist** — repo is not in `TARGET_REPOS`.
+- **`workspace_service.sh failed at line N`** — clone or checkout failed. Verify `GH_TOKEN` has `contents: read` on the target repo.
+- **`load_policy: repo not in allowlist`** — repo is not in `TARGET_REPOS`.
 
 ## Review OOM / container killed (exit 137)
 

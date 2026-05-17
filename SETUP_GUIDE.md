@@ -43,9 +43,7 @@ git-listeners/
 
 **Policy** — edit `git-listeners/<owner>/<repo>/policy.yml` to override diff size limit, required CI checks, merge method, min approvals, etc.
 
-**Instructions** — create `git-listeners/<owner>/<repo>/prompts/review/review.md` to override the default review prompt.
-
-**Skill files** — drop domain-specific review files into `git-listeners/<owner>/<repo>/prompts/review/`. Each needs a `description:` line so Claude knows when to use it:
+**Skill files** — drop domain-specific review files into `git-listeners/<owner>/<repo>/review/skills/`. Each needs a `description:` line so Claude knows when to use it:
 
 ```markdown
 description: Expert frontend reviewer for React and TypeScript changes
@@ -64,7 +62,7 @@ OPENAI_API_KEY=sk-...
 OPENAI_MODEL=gpt-4o
 ```
 
-Provider implementations live in `scripts/providers/`.
+Provider implementations live in `services/ai/`.
 
 ### 4. Add more repos
 

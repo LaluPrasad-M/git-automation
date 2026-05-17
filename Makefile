@@ -57,22 +57,22 @@ ps: check-tools
 	docker compose ps
 
 test:
-	@for f in scripts/actions/*.sh scripts/pipeline/*.sh scripts/listener/*.sh scripts/shared/*.sh tests/*.sh; do bash -n "$$f" || exit 1; done
+	@for f in commands/*.sh workflows/*.sh services/github/*.sh services/ai/*.sh services/git/*.sh utils/*.sh tests/*.sh; do bash -n "$$f" || exit 1; done
 	@for f in tests/test-*.sh; do \
 	  PATH="$(CURDIR)/tests/stubs:$$PATH" ANTHROPIC_API_KEY="" bash "$$f" || exit 1; \
 	done
 
 typecheck:
-	@bash scripts/shared/typecheck.sh all
+	@bash utils/typecheck.sh all
 
 typecheck-staged:
-	@bash scripts/shared/typecheck.sh staged
+	@bash utils/typecheck.sh staged
 
 install-hooks:
 	@test -f .githooks/pre-commit || (echo ".githooks/pre-commit not found" && exit 1)
-	@chmod +x .githooks/pre-commit scripts/shared/typecheck.sh
+	@chmod +x .githooks/pre-commit utils/typecheck.sh
 	@git config core.hooksPath .githooks
 	@echo "Git hooks enabled via core.hooksPath=.githooks"
 
 init: check-env
-	@set -a && . ./.env && set +a && bash scripts/shared/init-repo.sh
+	@set -a && . ./.env && set +a && bash commands/init.sh

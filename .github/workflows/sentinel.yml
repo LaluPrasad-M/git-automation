@@ -20,171 +20,25 @@ env:
   TARGET_REPOS: ${{ vars.TARGET_REPOS }}
 
 jobs:
-  classify:
-    runs-on: ubuntu-latest
-    outputs:
-      action: ${{ steps.classify.outputs.action }}
-      pr_number: ${{ steps.classify.outputs.pr_number }}
-      pr_author: ${{ steps.classify.outputs.pr_author }}
-      target_repo: ${{ steps.classify.outputs.target_repo }}
-      approved_by: ${{ steps.classify.outputs.approved_by }}
-      policy_file: ${{ steps.policy.outputs.policy_file }}
-      prompt_dir: ${{ steps.policy.outputs.prompt_dir }}
-      should_skip: ${{ steps.guard.outputs.should_skip }}
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install deps
-        run: |
-          sudo apt-get update && sudo apt-get install -y jq
-          sudo snap install yq
-
-      - name: Classify Event
-        id: classify
-        run: |
-          bash scripts/pipeline/classify.sh \
-            '${{ toJSON(github.event.client_payload) }}'
-
-      - name: Resolve Policy
-        id: policy
-        run: |
-          bash scripts/pipeline/load-policy.sh \
-            '${{ steps.classify.outputs.target_repo }}'
-
-      - name: Safety Guards
-        id: guard
-        env:
-          TARGET_REPO: ${{ steps.classify.outputs.target_repo }}
-          POLICY_FILE: ${{ steps.policy.outputs.policy_file }}
-        run: |
-          bash scripts/pipeline/guards.sh \
-            --author '${{ steps.classify.outputs.pr_author }}' \
-            --bot-user '${{ env.MY_GITHUB_USERNAME }}' \
-            --action '${{ steps.classify.outputs.action }}' \
-            --pr-number '${{ steps.classify.outputs.pr_number }}' \
-            --approved-by '${{ steps.classify.outputs.approved_by }}'
-
-  auto-review:
-    needs: classify
-    if: >
-      needs.classify.outputs.action == 'review' &&
-      needs.classify.outputs.should_skip != 'true'
+  sentinel:
     runs-on: ubuntu-latest
     concurrency:
-      group: >-
-        sentinel-${{ needs.classify.outputs.target_repo }}-
-        ${{ needs.classify.outputs.pr_number }}-review
-      cancel-in-progress: true
-    env:
-      TARGET_REPO: ${{ needs.classify.outputs.target_repo }}
-      PR_NUMBER: ${{ needs.classify.outputs.pr_number }}
-      POLICY_FILE: ${{ needs.classify.outputs.policy_file }}
-      PROMPT_DIR: ${{ needs.classify.outputs.prompt_dir }}
+      group: sentinel-${{ github.event.client_payload.target_repo }}-${{ github.event.client_payload.pr_number }}
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
+
       - name: Install deps
         run: |
-          sudo apt-get update && sudo apt-get install -y jq
-          sudo snap install yq
+          sudo apt-get update && sudo apt-get install -y jq coreutils
+          curl -fsSL "https://github.com/mikefarah/yq/releases/download/v4.44.3/yq_linux_amd64" -o /usr/local/bin/yq && chmod +x /usr/local/bin/yq
           npm install -g @anthropic-ai/claude-code
-      - name: Setup workspace
-        run: bash scripts/shared/setup-workspace.sh
-      - name: Run review
+
+      - name: Run sentinel
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: bash scripts/actions/review.sh
-
-  auto-followup:
-    needs: classify
-    if: >
-      needs.classify.outputs.action == 'followup' &&
-      needs.classify.outputs.should_skip != 'true'
-    runs-on: ubuntu-latest
-    concurrency:
-      group: >-
-        sentinel-${{ needs.classify.outputs.target_repo }}-
-        ${{ needs.classify.outputs.pr_number }}-followup
-      cancel-in-progress: true
-    env:
-      TARGET_REPO: ${{ needs.classify.outputs.target_repo }}
-      PR_NUMBER: ${{ needs.classify.outputs.pr_number }}
-      POLICY_FILE: ${{ needs.classify.outputs.policy_file }}
-      PROMPT_DIR: ${{ needs.classify.outputs.prompt_dir }}
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install deps
+          WORKSPACE: ${{ github.workspace }}
+          GITHUB_WORKSPACE: ${{ github.workspace }}
+          GH_PAYLOAD: ${{ toJSON(github.event.client_payload) }}
         run: |
-          sudo apt-get update && sudo apt-get install -y jq
-          sudo snap install yq
-          npm install -g @anthropic-ai/claude-code
-      - name: Setup workspace
-        run: bash scripts/shared/setup-workspace.sh
-      - name: Run follow-up
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: bash scripts/actions/thread-followup.sh
-
-  auto-approve:
-    needs: classify
-    if: >
-      needs.classify.outputs.action == 'approve' &&
-      needs.classify.outputs.should_skip != 'true'
-    runs-on: ubuntu-latest
-    concurrency:
-      group: >-
-        sentinel-${{ needs.classify.outputs.target_repo }}-
-        ${{ needs.classify.outputs.pr_number }}-approve
-      cancel-in-progress: true
-    env:
-      TARGET_REPO: ${{ needs.classify.outputs.target_repo }}
-      PR_NUMBER: ${{ needs.classify.outputs.pr_number }}
-      POLICY_FILE: ${{ needs.classify.outputs.policy_file }}
-      PROMPT_DIR: ${{ needs.classify.outputs.prompt_dir }}
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install deps
-        run: |
-          sudo apt-get update && sudo apt-get install -y jq
-          sudo snap install yq
-          npm install -g @anthropic-ai/claude-code
-      - name: Run approve
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: bash scripts/actions/approve.sh
-
-  auto-merge:
-    needs: classify
-    if: >
-      needs.classify.outputs.action == 'merge' &&
-      needs.classify.outputs.should_skip != 'true'
-    runs-on: ubuntu-latest
-    concurrency:
-      group: >-
-        sentinel-${{ needs.classify.outputs.target_repo }}-
-        ${{ needs.classify.outputs.pr_number }}-merge
-      cancel-in-progress: true
-    env:
-      TARGET_REPO: ${{ needs.classify.outputs.target_repo }}
-      PR_NUMBER: ${{ needs.classify.outputs.pr_number }}
-      POLICY_FILE: ${{ needs.classify.outputs.policy_file }}
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install deps
-        run: |
-          sudo apt-get update && sudo apt-get install -y jq
-          sudo snap install yq
-      - name: Run merge
-        run: bash scripts/actions/merge.sh
-
-  notify:
-    needs: [classify, auto-review, auto-followup, auto-approve, auto-merge]
-    if: always()
-    runs-on: ubuntu-latest
-    env:
-      PR_NUMBER: ${{ needs.classify.outputs.pr_number }}
-    steps:
-      - uses: actions/checkout@v4
-      - name: Notify
-        run: |
-          bash scripts/pipeline/notify.sh \
-            '${{ needs.classify.outputs.action }}' \
-            '${{ job.status }}'
+          bash workflows/dispatch.sh "$GH_PAYLOAD"
