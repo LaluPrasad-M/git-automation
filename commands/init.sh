@@ -25,9 +25,6 @@ scaffold_repo() {
     cat > "$policy_file" <<EOF
 repo: $repo
 
-review:
-  max_diff_lines: 2500
-
 approve:
   # required_checks:
   #   - ci

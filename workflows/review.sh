@@ -57,28 +57,29 @@ bash "$_root/services/git/workspace_service.sh"
 _new_ws="$(grep '^WORKSPACE=' "${GITHUB_ENV:-/dev/null}" | tail -1 | cut -d= -f2-)"
 [[ -n "$_new_ws" ]] && { export WORKSPACE="$_new_ws"; cd "$WORKSPACE"; }
 
-log INFO "Fetching diff for $TARGET_REPO#$PR_NUMBER"
-max_diff_lines="$(read_policy 'review.max_diff_lines')"
-[[ -z "$max_diff_lines" ]] && max_diff_lines=2500
+log INFO "Fetching PR metadata"
+pr_json="$(gh_get_pr "$TARGET_REPO" "$PR_NUMBER" "title,author,additions,deletions,changedFiles")"
+pr_title="$(jq -r '.title' <<<"$pr_json")"
+pr_author="$(jq -r '.author.login // empty' <<<"$pr_json")"
+files_changed="$(jq -r '.changedFiles' <<<"$pr_json")"
+lines_added="$(jq -r '.additions' <<<"$pr_json")"
+lines_removed="$(jq -r '.deletions' <<<"$pr_json")"
+changed_lines=$(( lines_added + lines_removed ))
 
+max_diff_lines="$(read_policy 'review.max_diff_lines')"
+[[ -z "$max_diff_lines" ]] && max_diff_lines="${MAX_DIFF_LINES:-2500}"
+
+if [[ "$changed_lines" -gt "$max_diff_lines" ]]; then
+  log SKIP "PR has $changed_lines changed lines (+$lines_added/-$lines_removed), exceeds limit of $max_diff_lines"
+  gh_post_pr_comment "$TARGET_REPO" "$PR_NUMBER" "This PR has $changed_lines changed lines (+$lines_added/-$lines_removed) which exceeds the auto-review limit of $max_diff_lines. Please split it into smaller focused PRs so each can be reviewed effectively."
+  exit 0
+fi
+
+log INFO "Fetching diff for $TARGET_REPO#$PR_NUMBER"
 diff_output="$(gh_get_pr_diff "$TARGET_REPO" "$PR_NUMBER" 2>&1)" || {
   gh_post_pr_comment "$TARGET_REPO" "$PR_NUMBER" "Auto-review skipped: unable to fetch PR diff."
   exit 0
 }
-diff_lines="$(wc -l <<<"$diff_output" | tr -d ' ')"
-log INFO "Diff fetched — $diff_lines lines"
-if [[ "$diff_lines" -gt "$max_diff_lines" ]]; then
-  gh_post_pr_comment "$TARGET_REPO" "$PR_NUMBER" "This PR has $diff_lines diff lines which exceeds the auto-review limit of $max_diff_lines. Please split it into smaller focused PRs so each can be reviewed effectively."
-  exit 0
-fi
-
-log INFO "Fetching PR metadata"
-pr_json="$(gh_get_pr "$TARGET_REPO" "$PR_NUMBER" "title,author,additions,deletions,changedFiles")"
-pr_title="$(jq -r '.title' <<<"$pr_json")"
-pr_author="$(jq -r '.author.login' <<<"$pr_json")"
-files_changed="$(jq -r '.changedFiles' <<<"$pr_json")"
-lines_added="$(jq -r '.additions' <<<"$pr_json")"
-lines_removed="$(jq -r '.deletions' <<<"$pr_json")"
 
 log INFO "Building review prompt (files=$files_changed, +$lines_added/-$lines_removed)"
 _sentinel_root="${GITHUB_WORKSPACE:-$_root}"

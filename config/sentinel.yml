@@ -1,6 +1,5 @@
 review:
   enabled: true
-  max_diff_lines: 2500
 
 approve:
   enabled: true
