@@ -48,6 +48,15 @@ parse_target_repos() {
 state_dir="${STATE_DIR:-$workspace/.state/event-listener}"
 mkdir -p "$state_dir"
 
+# Clear any stale lock files left by a previous run that was killed mid-review.
+# No background workers can be running at startup, so all locks are orphaned.
+_stale_locks=0
+while IFS= read -r _lock; do
+  rm -f "$_lock"
+  _stale_locks=$(( _stale_locks + 1 ))
+done < <(find "$state_dir" -name "pr-*.lock" -type f 2>/dev/null)
+[[ "$_stale_locks" -gt 0 ]] && log INFO "Cleared $_stale_locks stale lock file(s) from previous run"
+
 startup_repos=()
 while IFS= read -r repo; do
   [[ -z "$repo" ]] && continue
