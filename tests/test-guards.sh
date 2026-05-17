@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Isolate from CI env — DRY_RUN tests set it explicitly in their subshells
+unset DRY_RUN
+
 pass=0
 fail=0
 
