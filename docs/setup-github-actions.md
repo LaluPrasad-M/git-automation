@@ -40,10 +40,7 @@ git push
 
 ## 3. How it works
 
-`scheduled-check.yml` runs every 15 minutes:
-1. Polls each repo in `TARGET_REPOS` for open PRs where `MY_GITHUB_USERNAME` is a requested reviewer
-2. Dispatches a `pr_review_requested` event to this control repo
-3. `sentinel.yml` picks it up and runs the review pipeline on a GitHub runner
+`sentinel.yml` is triggered by `repository_dispatch` events. When an event is received, it runs `workflows/dispatch.sh` with the payload, which classifies the action, applies guards and policy, then delegates to the appropriate workflow (`review.sh`, `approve.sh`, `merge.sh`, or `followup.sh`).
 
 ## 4. Full pipeline (all actions)
 

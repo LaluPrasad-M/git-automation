@@ -3,7 +3,7 @@
 ## Entry Conditions
 
 1. `PullRequestReviewEvent` with state `APPROVED` is detected by the event listener.
-2. Classifier sets `action=merge` in `scripts/pipeline/classify.sh`.
+2. Classifier sets `action=merge` in `workflows/classify.sh`.
 3. Guards evaluate. Merge is skipped unless **PR author == `MY_GITHUB_USERNAME`**.
 
 The merge flow only acts on your own PRs. PRs authored by others are skipped at the guard stage regardless of who approved them.

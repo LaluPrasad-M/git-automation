@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -euo pipefail
 
 gh_get_pr() {
   local repo="$1" pr="$2" fields="${3:-title,author,state}"

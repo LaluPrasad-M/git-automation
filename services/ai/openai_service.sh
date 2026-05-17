@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -euo pipefail
 # OpenAI provider — stub implementation of call_llm().
 # Required env: OPENAI_API_KEY, OPENAI_MODEL (default: gpt-4o)
 

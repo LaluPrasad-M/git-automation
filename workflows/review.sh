@@ -24,10 +24,9 @@ source "$_root/services/ai/response_parser.sh"
 trap 'log ERROR "review.sh failed at line $LINENO (exit $?)"' ERR
 
 log INFO "Checking reviewer eligibility for $TARGET_REPO#$PR_NUMBER"
-is_reviewer="$(gh_get_pr "$TARGET_REPO" "$PR_NUMBER" "reviewRequests" \
-  | jq --arg me "${MY_GITHUB_USERNAME:-}" '[.reviewRequests[]? | select(.login == $me)] | length > 0')"
-
-pr_author="$(gh_get_pr "$TARGET_REPO" "$PR_NUMBER" "author" | jq -r '.author.login')"
+_pr_meta="$(gh_get_pr "$TARGET_REPO" "$PR_NUMBER" "reviewRequests,author")"
+is_reviewer="$(jq --arg me "${MY_GITHUB_USERNAME:-}" '[.reviewRequests[]? | select(.login == $me)] | length > 0' <<<"$_pr_meta")"
+pr_author="$(jq -r '.author.login // empty' <<<"$_pr_meta")"
 author_whitelisted="false"
 if [[ -n "${AUTO_REVIEW_AUTHORS:-}" ]]; then
   is_auto_review_author_for_repo "${TARGET_REPO:-}" "$pr_author" "$AUTO_REVIEW_AUTHORS" && author_whitelisted="true"
@@ -53,6 +52,7 @@ if [[ "$already_approved" == "true" ]]; then
 fi
 
 log INFO "Setting up git workspace"
+[[ -n "${GITHUB_ENV:-}" ]] || { log ERROR "review.sh: GITHUB_ENV must be set before calling workspace_service"; exit 1; }
 bash "$_root/services/git/workspace_service.sh"
 _new_ws="$(grep '^WORKSPACE=' "${GITHUB_ENV:-/dev/null}" | tail -1 | cut -d= -f2-)"
 [[ -n "$_new_ws" ]] && { export WORKSPACE="$_new_ws"; cd "$WORKSPACE"; }
@@ -81,11 +81,9 @@ lines_added="$(jq -r '.additions' <<<"$pr_json")"
 lines_removed="$(jq -r '.deletions' <<<"$pr_json")"
 
 log INFO "Building review prompt (files=$files_changed, +$lines_added/-$lines_removed)"
-prompt_root="$(resolve_control_path "$PROMPT_DIR")"
-default_prompt_root="$GITHUB_WORKSPACE/config/prompts/defaults"
-
-template_file="$prompt_root/review/review.md"
-[[ ! -f "$template_file" ]] && template_file="$default_prompt_root/review/review.md"
+_sentinel_root="${GITHUB_WORKSPACE:-$_root}"
+template_file="$_sentinel_root/config/prompts/review/template/review.md"
+[[ -f "$template_file" ]] || { log ERROR "Review template not found: $template_file"; exit 1; }
 
 prompt="$(cat "$template_file")"
 prompt="${prompt//\{\{PR_NUMBER\}\}/$PR_NUMBER}"
@@ -97,20 +95,27 @@ prompt="${prompt//\{\{FILES_CHANGED\}\}/$files_changed}"
 prompt="${prompt//\{\{LINES_ADDED\}\}/$lines_added}"
 prompt="${prompt//\{\{LINES_REMOVED\}\}/$lines_removed}"
 
-repo_skills_dir="$prompt_root/review"
+repo_skills_dir="$_sentinel_root/git-listeners/$TARGET_REPO/review/skills"
+skill_manifest=""
+_effective_skills_dir=""
 if [[ -d "$repo_skills_dir" ]]; then
-  skill_manifest="$(build_skill_manifest "$repo_skills_dir" "review.md")"
-  if [[ -n "$skill_manifest" ]]; then
-    skill_count="$(grep -c '^-' <<<"$skill_manifest" || true)"
-    log INFO "Loading $skill_count skill file(s) from $repo_skills_dir"
-    prompt+=$'\n\n## Available Skill Files\n'
-    prompt+="Read only the skill files relevant to the files changed in this PR. Use \`cat\` to read them from: $repo_skills_dir/"$'\n'
-    prompt+="$skill_manifest"
-  else
-    log INFO "No skill files found in $repo_skills_dir"
-  fi
+  skill_manifest="$(build_skill_manifest "$repo_skills_dir")"
+  [[ -n "$skill_manifest" ]] && _effective_skills_dir="$repo_skills_dir"
+fi
+if [[ -z "$_effective_skills_dir" ]]; then
+  _default_skills_dir="$_sentinel_root/config/prompts/review/skills"
+  skill_manifest="$(build_skill_manifest "$_default_skills_dir")"
+  [[ -n "$skill_manifest" ]] && _effective_skills_dir="$_default_skills_dir"
+fi
+if [[ -n "$skill_manifest" && -n "$_effective_skills_dir" ]]; then
+  skill_count="$(grep -c '^-' <<<"$skill_manifest" || true)"
+  skill_count="${skill_count:-0}"
+  log INFO "Loading $skill_count skill file(s) from $_effective_skills_dir"
+  prompt+=$'\n\n## Available Skill Files\n'
+  prompt+="Read only the skill files relevant to the files changed in this PR. Use \`cat\` to read them from: $_effective_skills_dir/"$'\n'
+  prompt+="$skill_manifest"
 else
-  log INFO "No skills directory at $repo_skills_dir — using base prompt only"
+  log INFO "No skill files found — using base prompt only"
 fi
 
 prompt+=$'\n\n## PR Diff\n\n```diff\n'"$diff_output"$'\n```\n'
@@ -128,16 +133,20 @@ prompt+=$'  ]\n'
 prompt+=$'}\n'
 
 prompt_lines="$(wc -l <<<"$prompt" | tr -d ' ')"
-_max_turns="${MAX_TURNS:-5}"
-log INFO "Calling LLM for review of $TARGET_REPO#$PR_NUMBER (prompt=${prompt_lines} lines, max_turns=${_max_turns})"
-raw_output="$(call_llm "$prompt" "cat,grep,find,head,tail" "$_max_turns")" || true
-printf '%s\n' "$raw_output" > /tmp/claude-review-output.txt
+log INFO "Calling LLM for review of $TARGET_REPO#$PR_NUMBER (prompt=${prompt_lines} lines, max_turns=${MAX_TURNS:-5})"
+raw_output="$(call_llm "$prompt" "cat,grep,find,head,tail")" || true
+if [[ -z "$raw_output" ]]; then
+  log ERROR "LLM call returned empty output"
+  gh_post_pr_comment "$TARGET_REPO" "$PR_NUMBER" "Auto-review skipped: LLM call returned no output."
+  exit 0
+fi
+printf '%s\n' "$raw_output" > "/tmp/claude-review-${TARGET_REPO//\//__}-${PR_NUMBER}.txt"
 
 response_lines="$(wc -l <<<"$raw_output" | tr -d ' ')"
 log INFO "LLM response received (${response_lines} lines) — parsing review JSON"
 if ! review_json="$(extract_json_payload "$raw_output")"; then
   log WARN "Failed to parse structured review output — posting raw fallback"
-  gh_post_pr_comment "$TARGET_REPO" "$PR_NUMBER" "Review parsing fallback: unable to parse structured output.\n\n${raw_output:0:6000}"
+  gh_post_pr_comment "$TARGET_REPO" "$PR_NUMBER" "Review parsing fallback: unable to parse structured output."$'\n\n'"${raw_output:0:6000}"
   exit 0
 fi
 
@@ -172,7 +181,7 @@ if [[ "$finding_count" -gt 0 ]]; then
     recommendation="$(jq -r '.recommendation // ""' <<<"$finding")"
 
     finding_seed="$path|$line|$title|$severity"
-    finding_id="$(printf '%s' "$finding_seed" | shasum | awk '{print $1}' | cut -c1-12)"
+    finding_id="$(printf '%s' "$finding_seed" | (command -v shasum >/dev/null 2>&1 && shasum || sha1sum) | awk '{print $1}' | cut -c1-12)"
 
     severity_text="$(severity_label "$severity")"
     body="$(printf 'Review Comment(Severity:%s)\n%s\n\n%s\n\n<!-- SENTINEL:FINDING id=%s severity=%s -->' \

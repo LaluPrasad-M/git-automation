@@ -48,6 +48,8 @@ classify_out="$tmp_dir/classify.out"
 guard_out="$tmp_dir/guard.out"
 policy_env="$tmp_dir/policy.env"
 
+jq -e '.' <<<"$payload" >/dev/null 2>&1 || { log ERROR "Malformed payload JSON"; exit 1; }
+
 export GITHUB_OUTPUT="$classify_out"
 bash "$script_dir/classify.sh" "$(jq -c '.client_payload // .' <<<"$payload")"
 
@@ -59,6 +61,7 @@ approved_by="$(grep -E '^approved_by=' "$classify_out" | tail -n1 | cut -d= -f2-
 event_type="$(jq -r '.event_type // .client_payload.event_type // "unknown"' <<<"$payload")"
 
 if [[ "$action" == "skip" ]]; then
+  log SKIP "$target_repo#$pr_number — PR is not open, skipping dispatch"
   exit 0
 fi
 
@@ -104,29 +107,20 @@ fi
 
 export GITHUB_OUTPUT="$tmp_dir/policy.out"
 export GITHUB_ENV="$policy_env"
-load_policy "$target_repo"
+load_policy "$target_repo" || { log ERROR "Policy load failed for $target_repo"; exit 1; }
 
 policy_file="$(grep -E '^policy_file=' "$tmp_dir/policy.out" | tail -n1 | cut -d= -f2-)"
-prompt_dir="$(grep -E '^prompt_dir=' "$tmp_dir/policy.out" | tail -n1 | cut -d= -f2-)"
 
 export TARGET_REPO="$target_repo"
 export POLICY_FILE="$policy_file"
 
-enabled="true"
-if [[ -f "$policy_file" ]]; then
-  if [[ "$(yq e '.repo' "$policy_file" 2>/dev/null)" != "null" ]]; then
-    enabled="$(yq e ".${action}.enabled // true" "$policy_file")"
-  else
-    enabled="$(yq e ".defaults.${action}.enabled // true" "$policy_file")"
-  fi
-fi
+enabled="$(yq e ".${action}.enabled // true" "$policy_file" 2>/dev/null || echo true)"
 if [[ "$enabled" == "false" ]]; then
   log SKIP "$action is disabled in policy for $target_repo"
   exit 0
 fi
 
 export PR_NUMBER="$pr_number"
-export PROMPT_DIR="$prompt_dir"
 
 case "$action" in
   review)   bash "$script_dir/review.sh" ;;

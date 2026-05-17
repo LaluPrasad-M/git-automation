@@ -27,16 +27,16 @@ fi
 cd "$workspace"
 
 if ! command -v gh >/dev/null 2>&1; then
-  echo "gh is required" >&2
+  log ERROR "gh is required"
   exit 1
 fi
 if ! command -v jq >/dev/null 2>&1; then
-  echo "jq is required" >&2
+  log ERROR "jq is required"
   exit 1
 fi
 
 if [[ -z "${TARGET_REPOS:-}" ]]; then
-  echo "TARGET_REPOS is required" >&2
+  log ERROR "TARGET_REPOS is required"
   exit 1
 fi
 
@@ -190,17 +190,20 @@ while true; do
     newest_id="$(jq -r '.[0].id // ""' <<<"$events_json")"
 
     if [[ -z "$newest_id" ]]; then
+      log WARN "No events returned for $repo — skipping"
       continue
     fi
 
     # First time watching this repo: initialize checkpoint from current head event
     # to avoid replaying historical backlog entries.
     if [[ -z "$last_id" ]]; then
+      log INFO "First poll for $repo — initialising state checkpoint at event $newest_id"
       printf '%s' "$newest_id" > "$state_file"
       continue
     fi
 
     new_events_file="$(mktemp)"
+    trap 'rm -f "$new_events_file"' EXIT
     while IFS= read -r event; do
       event_id="$(jq -r '.id // ""' <<<"$event")"
       if [[ -n "$last_id" && "$event_id" == "$last_id" ]]; then
@@ -211,7 +214,11 @@ while true; do
 
     if [[ -s "$new_events_file" ]]; then
       while IFS= read -r event; do
-        payloads="$(build_payload "$event" "$repo" 2>/dev/null || true)"
+        payloads="$(build_payload "$event" "$repo" 2>/tmp/build_payload_err || true)"
+        if [[ -s /tmp/build_payload_err ]]; then
+          log WARN "build_payload error for $repo event $(jq -r '.id // "unknown"' <<<"$event"): $(</tmp/build_payload_err)"
+          rm -f /tmp/build_payload_err
+        fi
         if [[ -n "$payloads" ]]; then
           while IFS= read -r payload; do
             [[ -z "$payload" ]] && continue
@@ -226,7 +233,7 @@ while true; do
               if ! bash "$_root/workflows/dispatch.sh" "$payload"; then
                 log WARN "Dispatch failed for $repo event $(jq -r '.id // "unknown"' <<<"$event")"
               fi
-              [[ -n "$pr_number" ]] && rm -f "$lock_file"
+              [[ -n "$pr_number" ]] && { rm -f "$lock_file" || log WARN "Failed to remove lock for $repo#$pr_number"; }
             ) &
           done <<<"$payloads"
         fi

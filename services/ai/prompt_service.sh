@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -euo pipefail
 
 # build_skill_manifest <dir> <exclude_filename>
 # Prints a bullet list of skill files with their descriptions.

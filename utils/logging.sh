@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -euo pipefail
 
 log() {
   local type="$1"; shift

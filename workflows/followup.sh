@@ -19,25 +19,24 @@ source "$_root/services/ai/response_parser.sh"
 
 trap 'log ERROR "followup.sh failed at line $LINENO (exit $?)"' ERR
 
+[[ -n "${GITHUB_OUTPUT:-}" ]] || { log ERROR "followup.sh: GITHUB_OUTPUT is unset"; exit 1; }
+
 owner="${TARGET_REPO%/*}"
 repo_name="${TARGET_REPO#*/}"
-bot_user="${MY_GITHUB_USERNAME}"
+bot_user="${MY_GITHUB_USERNAME:-}"
+[[ -n "$bot_user" ]] || { log ERROR "MY_GITHUB_USERNAME is required"; exit 1; }
 
 is_positive_reply() {
   local text="$1"
+  local prior_nocasematch; prior_nocasematch="$(shopt -p nocasematch)"
   shopt -s nocasematch
-  if [[ "$text" =~ (won\'t|wont|cannot|can\'t|partial|later|defer|not\ fix|decline|won.?t\ fix) ]]; then
-    shopt -u nocasematch
-    return 1
+  local result=1
+  if [[ "$text" =~ (fixed|addressed|done|updated|resolved|implemented|pushed\ changes|added\ tests) ]] && \
+     ! [[ "$text" =~ (won\'t|wont|cannot|can\'t|partial|later|defer|not\ fix|decline|won.?t\ fix) ]]; then
+    result=0
   fi
-
-  if [[ "$text" =~ (fixed|addressed|done|updated|resolved|implemented|pushed\ changes|added\ tests) ]]; then
-    shopt -u nocasematch
-    return 0
-  fi
-
-  shopt -u nocasematch
-  return 1
+  eval "$prior_nocasematch"
+  return $result
 }
 
 record_exception() {
@@ -89,6 +88,7 @@ if [[ -z "$candidates" ]]; then
   exit 0
 fi
 
+[[ -n "${GITHUB_ENV:-}" ]] || { log ERROR "followup.sh: GITHUB_ENV must be set before calling workspace_service"; exit 1; }
 bash "$_root/services/git/workspace_service.sh"
 _new_ws="$(grep '^WORKSPACE=' "${GITHUB_ENV:-/dev/null}" | tail -1 | cut -d= -f2-)"
 [[ -n "$_new_ws" ]] && { export WORKSPACE="$_new_ws"; cd "$WORKSPACE"; }
@@ -98,7 +98,7 @@ if [[ -z "$base_ref" ]]; then
   log ERROR "Unable to resolve base ref for ${TARGET_REPO}#${PR_NUMBER} — skipping follow-up"
   exit 1
 fi
-git fetch origin "$base_ref" >/dev/null 2>&1 || true
+git fetch origin "$base_ref" >/dev/null 2>&1 || log WARN "Failed to fetch $base_ref for ${TARGET_REPO}#${PR_NUMBER} — diff context may be incomplete"
 
 while IFS= read -r item; do
   [[ -z "$item" ]] && continue
@@ -126,7 +126,7 @@ $file_diff
 
 Return ONLY JSON: {\"fixed\": true|false, \"reason\": \"...\"}."
 
-    verify_raw="$(call_llm "$verify_prompt" "cat,grep" "${MAX_TURNS:-5}")"
+    verify_raw="$(call_llm "$verify_prompt" "cat,grep")"
     if verify_json="$(extract_json_payload "$verify_raw")"; then
       fixed="$(jq -r '.fixed // false' <<<"$verify_json")"
       reason="$(jq -r '.reason // "No reason provided"' <<<"$verify_json")"
@@ -149,7 +149,7 @@ $latest_body
 
 Return ONLY JSON: {\"accepted\": true|false, \"reason\": \"...\", \"learning\": \"...\"}."
 
-    validate_raw="$(call_llm "$validate_prompt" "cat,grep" "${MAX_TURNS:-5}")"
+    validate_raw="$(call_llm "$validate_prompt" "cat,grep")"
     if validate_json="$(extract_json_payload "$validate_raw")"; then
       accepted="$(jq -r '.accepted // false' <<<"$validate_json")"
       reason="$(jq -r '.reason // "No reason provided"' <<<"$validate_json")"

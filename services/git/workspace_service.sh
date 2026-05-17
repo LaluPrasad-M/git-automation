@@ -1,18 +1,22 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-_logging="$(dirname "${BASH_SOURCE[0]}")/../../utils/logging.sh"
+_svc_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+_logging="$_svc_dir/../../utils/logging.sh"
 # shellcheck source=utils/logging.sh
 # shellcheck disable=SC1091
 source "$_logging"
+# shellcheck disable=SC1091
+source "$_svc_dir/../github/pr_service.sh"
 
 trap 'log ERROR "workspace_service.sh failed at line $LINENO (exit $?)"' ERR
 
+[[ -n "${GITHUB_ENV:-}" ]] || { log ERROR "workspace_service.sh: GITHUB_ENV is unset"; exit 1; }
+log INFO "Setting up workspace for ${TARGET_REPO}#${PR_NUMBER:-<no PR>}"
+
 work_dir="${WORK_DIR:-/tmp/sentinel-workspace}"
 target_dir="$work_dir/target"
-
-commit_count="$(gh pr view "$PR_NUMBER" --repo "$TARGET_REPO" --json commits --jq '.commits | length')"
-fetch_depth=$(( ${commit_count:-1} + 1 ))
+fetch_depth=2
 
 if [[ -d "$target_dir/.git" ]]; then
   existing_remote="$(git -C "$target_dir" remote get-url origin 2>/dev/null || true)"
@@ -36,20 +40,25 @@ git config user.name "Claude Git Sentinel"
 git config user.email "${MY_GITHUB_USERNAME}@users.noreply.github.com"
 
 if [[ -n "${PR_NUMBER:-}" ]]; then
+  commit_count="$(gh_get_pr "$TARGET_REPO" "$PR_NUMBER" "commits" | jq '.commits | length')"
+  [[ "$commit_count" =~ ^[0-9]+$ ]] || { log WARN "Could not fetch commit count for PR#$PR_NUMBER — using default depth"; commit_count=1; }
+  fetch_depth=$(( commit_count + 1 ))
   pr_checkout_branch="sentinel-pr-${PR_NUMBER}-head"
 
   # Use pull/<number>/head so checkout works for both same-repo and fork PRs.
   if git fetch --depth="$fetch_depth" origin "pull/${PR_NUMBER}/head:${pr_checkout_branch}"; then
     git checkout "$pr_checkout_branch"
+    log INFO "Checked out PR branch $pr_checkout_branch for ${TARGET_REPO}#${PR_NUMBER}"
   else
-    # Fallback to detached checkout by head SHA when pull ref fetch is unavailable.
-    head_sha="$(gh pr view "$PR_NUMBER" --repo "$TARGET_REPO" --json headRefOid --jq '.headRefOid // empty')"
+    log WARN "Pull ref fetch failed for PR#${PR_NUMBER} — falling back to detached HEAD"
+    head_sha="$(gh_get_pr "$TARGET_REPO" "$PR_NUMBER" "headRefOid" | jq -r '.headRefOid // empty')"
     if [[ -z "$head_sha" ]]; then
       log ERROR "Unable to resolve PR head SHA for ${TARGET_REPO}#${PR_NUMBER}"
       exit 1
     fi
     git fetch --depth="$fetch_depth" origin "$head_sha"
     git checkout --detach FETCH_HEAD
+    log INFO "Checked out detached HEAD at $head_sha for ${TARGET_REPO}#${PR_NUMBER}"
   fi
 fi
 

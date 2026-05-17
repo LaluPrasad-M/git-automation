@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -euo pipefail
 
 extract_json_payload() {
   local raw="$1"

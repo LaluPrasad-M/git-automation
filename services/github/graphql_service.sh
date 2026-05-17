@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
+set -euo pipefail
 
 gh_get_pr_review_threads() {
   local owner="$1" repo_name="$2" pr="$3"
+  [[ "$pr" =~ ^[0-9]+$ ]] || { echo "gh_get_pr_review_threads: invalid pr number '$pr'" >&2; return 1; }
   local threads_query
   threads_query="query(\$owner:String!,\$name:String!,\$number:Int!){repository(owner:\$owner,name:\$name){pullRequest(number:\$number){reviewThreads(first:100){nodes{id isResolved path comments(first:50){nodes{id databaseId body author{login} createdAt}}}}}}}"
   gh api graphql \

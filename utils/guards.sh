@@ -6,6 +6,8 @@ _logging="$(dirname "${BASH_SOURCE[0]}")/logging.sh"
 # shellcheck disable=SC1091
 source "$_logging"
 
+[[ -n "${GITHUB_OUTPUT:-}" ]] || { log ERROR "guards.sh: GITHUB_OUTPUT is unset"; exit 1; }
+
 pr_author=""
 bot_user=""
 action=""
@@ -23,8 +25,6 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# Parsed for compatibility with callers that always pass PR context.
-[[ -n "$pr_number" ]] && :
 
 should_skip="false"
 
@@ -52,5 +52,5 @@ echo "should_skip=$should_skip" >> "$GITHUB_OUTPUT"
 if [[ "$should_skip" == "true" ]]; then
   log SKIP "Guard: skipping action=$action pr=$pr_number"
 else
-  log INFO "Guard passed —, proceeding with action=$action pr=$pr_number"
+  log INFO "Guard passed — proceeding with action=$action pr=$pr_number"
 fi

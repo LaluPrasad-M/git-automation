@@ -4,7 +4,7 @@ You are deciding whether PR #{{PR_NUMBER}} in {{TARGET_REPO}} should be approved
 
 ## Preconditions (already verified by pipeline)
 
-- CI status: {{CI_STATUS}}
+- CI checks passed: {{CI_STATUS}}
 - No unresolved sentinel review threads
 
 ## Process

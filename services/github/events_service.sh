@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -euo pipefail
 
 gh_repo_events() {
   local repo="$1"

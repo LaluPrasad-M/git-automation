@@ -1,51 +1,13 @@
----
-version: 1
+review:
+  enabled: true
+  max_diff_lines: 2500
 
-defaults:
-  review:
-    enabled: true
-    max_diff_lines: 2500
-    post_as: COMMENT
-    severity_block_threshold: major
-    include_file_patterns:
-      - "**/*.ts"
-      - "**/*.tsx"
-      - "**/*.js"
-      - "**/*.jsx"
-      - "**/*.py"
-      - "**/*.go"
-      - "**/*.java"
-      - "**/*.rb"
-      - "**/*.rs"
-      - "**/*.cs"
-      - "**/*.yaml"
-      - "**/*.yml"
-    exclude_file_patterns:
-      - "**/*.lock"
-      - "**/*.generated.*"
-      - "**/node_modules/**"
-      - "**/__snapshots__/**"
-  approve:
-    enabled: true
-    require_ci_pass: true
-    require_claude_review: true
-    ci_check_timeout_minutes: 30
-    ci_poll_interval_seconds: 60
-    required_checks:
-      - ci
-  merge:
-    enabled: true
-    method: squash
-    min_approvals: 1
-    require_ci_pass: true
-    delete_branch_after: false
-  safety:
-    self_filter: true
-    rate_limit:
-      max_actions_per_hour: 20
-      max_reviews_per_pr: 3
-    dry_run: false
-    max_claude_cost_per_run_usd: 1.00
-  logging:
-    level: info
-    include_prompts: false
+approve:
+  enabled: true
+  required_checks: []
+
+merge:
+  enabled: true
+  method: squash
+  min_approvals: 1
+  require_ci_pass: true

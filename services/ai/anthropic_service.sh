@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -euo pipefail
 # Anthropic provider — implements call_llm() using the claude CLI.
 # Required env: ANTHROPIC_API_KEY
 

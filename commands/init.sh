@@ -15,7 +15,7 @@ scaffold_repo() {
   local dir="$root/git-listeners/${owner}/${name}"
 
   echo "Initialising $repo → git-listeners/${owner}/${name}/"
-  mkdir -p "$dir/prompts/review" "$dir/prompts/approve"
+  mkdir -p "$dir/review/skills"
 
   # --- Policy file ---
   local policy_file="$dir/policy.yml"
@@ -40,7 +40,7 @@ EOF
   fi
 
   # --- Prompt stubs ---
-  echo "  created prompts/review/ and prompts/approve/ — add skill files here to extend the defaults"
+  echo "  created review/skills/ — add .md skill files here to override the default review checklist"
 
   echo "Done: $repo"
 }
