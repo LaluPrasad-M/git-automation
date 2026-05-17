@@ -134,9 +134,8 @@ prompt+=$'  ]\n'
 prompt+=$'}\n'
 
 prompt_lines="$(wc -l <<<"$prompt" | tr -d ' ')"
-_review_max_turns="${MAX_TURNS:-10}"
-log INFO "Calling LLM for review of $TARGET_REPO#$PR_NUMBER (prompt=${prompt_lines} lines, max_turns=${_review_max_turns})"
-raw_output="$(call_llm "$prompt" "cat,grep,find,head,tail" "$_review_max_turns")" || true
+log INFO "Calling LLM for review of $TARGET_REPO#$PR_NUMBER (prompt=${prompt_lines} lines, max_turns=${MAX_TURNS:-5})"
+raw_output="$(call_llm "$prompt" "cat,grep,find,head,tail")" || true
 if [[ -z "$raw_output" ]]; then
   log ERROR "LLM call returned empty output"
   gh_post_pr_comment "$TARGET_REPO" "$PR_NUMBER" "Auto-review skipped: LLM call returned no output."
