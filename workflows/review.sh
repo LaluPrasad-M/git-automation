@@ -134,8 +134,9 @@ prompt+=$'  ]\n'
 prompt+=$'}\n'
 
 prompt_lines="$(wc -l <<<"$prompt" | tr -d ' ')"
-log INFO "Calling LLM for review of $TARGET_REPO#$PR_NUMBER (prompt=${prompt_lines} lines, max_turns=${MAX_TURNS:-5})"
-raw_output="$(call_llm "$prompt" "cat,grep,find,head,tail")" || true
+_review_max_turns="${MAX_TURNS:-10}"
+log INFO "Calling LLM for review of $TARGET_REPO#$PR_NUMBER (prompt=${prompt_lines} lines, max_turns=${_review_max_turns})"
+raw_output="$(call_llm "$prompt" "cat,grep,find,head,tail" "$_review_max_turns")" || true
 if [[ -z "$raw_output" ]]; then
   log ERROR "LLM call returned empty output"
   gh_post_pr_comment "$TARGET_REPO" "$PR_NUMBER" "Auto-review skipped: LLM call returned no output."
@@ -146,9 +147,9 @@ printf '%s\n' "$raw_output" > "/tmp/claude-review-${TARGET_REPO//\//__}-${PR_NUM
 response_lines="$(wc -l <<<"$raw_output" | tr -d ' ')"
 log INFO "LLM response received (${response_lines} lines) — parsing review JSON"
 if ! review_json="$(extract_json_payload "$raw_output")"; then
-  log WARN "Failed to parse structured review output — posting raw fallback"
-  gh_post_pr_comment "$TARGET_REPO" "$PR_NUMBER" "Review parsing fallback: unable to parse structured output."$'\n\n'"${raw_output:0:6000}"
-  exit 0
+  log ERROR "Failed to parse structured review output (${response_lines} lines) — raw output: ${raw_output:0:500}"
+  gh_post_pr_comment "$TARGET_REPO" "$PR_NUMBER" "Review failed: LLM did not return valid JSON."$'\n\n'"**Raw output:**"$'\n```\n'"${raw_output:0:6000}"$'\n```'
+  exit 1
 fi
 
 log INFO "Resolving PR head SHA for inline comments"
