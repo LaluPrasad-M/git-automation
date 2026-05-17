@@ -39,5 +39,6 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           WORKSPACE: ${{ github.workspace }}
           GITHUB_WORKSPACE: ${{ github.workspace }}
+          GH_PAYLOAD: ${{ toJSON(github.event.client_payload) }}
         run: |
-          bash workflows/dispatch.sh '${{ toJSON(github.event.client_payload) }}'
+          bash workflows/dispatch.sh "$GH_PAYLOAD"

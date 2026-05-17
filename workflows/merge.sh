@@ -105,6 +105,6 @@ if [[ "$mergeable" != "MERGEABLE" ]]; then
   exit 0
 fi
 
-gh_post_pr_comment "$TARGET_REPO" "$PR_NUMBER" "All checks passed. Merging automatically."
+gh_post_pr_comment "$TARGET_REPO" "$PR_NUMBER" "Everything looks good — merging now."
 gh_merge_pr "$TARGET_REPO" "$PR_NUMBER" "$merge_method" "Auto-merged by Claude Git Sentinel"
 log INFO "Merge complete for $TARGET_REPO#$PR_NUMBER (method=$merge_method)"

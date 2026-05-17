@@ -71,13 +71,13 @@ max_diff_lines="$(read_policy 'review.max_diff_lines')"
 
 if [[ "$changed_lines" -gt "$max_diff_lines" ]]; then
   log SKIP "PR has $changed_lines changed lines (+$lines_added/-$lines_removed), exceeds limit of $max_diff_lines"
-  gh_post_pr_comment "$TARGET_REPO" "$PR_NUMBER" "This PR has $changed_lines changed lines (+$lines_added/-$lines_removed) which exceeds the auto-review limit of $max_diff_lines. Please split it into smaller focused PRs so each can be reviewed effectively."
+  gh_post_pr_comment "$TARGET_REPO" "$PR_NUMBER" "This PR is too large to review in one pass (+$lines_added/-$lines_removed, limit is $max_diff_lines changed lines). Splitting it into smaller focused PRs would help get better feedback on each part."
   exit 0
 fi
 
 log INFO "Fetching diff for $TARGET_REPO#$PR_NUMBER"
 diff_output="$(gh_get_pr_diff "$TARGET_REPO" "$PR_NUMBER" 2>&1)" || {
-  gh_post_pr_comment "$TARGET_REPO" "$PR_NUMBER" "Auto-review skipped: unable to fetch PR diff."
+  gh_post_pr_comment "$TARGET_REPO" "$PR_NUMBER" "Couldn't fetch the diff — skipping review for now."
   exit 0
 }
 
@@ -138,7 +138,7 @@ log INFO "Calling LLM for review of $TARGET_REPO#$PR_NUMBER (prompt=${prompt_lin
 raw_output="$(call_llm "$prompt" "cat,grep,find,head,tail")" || true
 if [[ -z "$raw_output" ]]; then
   log ERROR "LLM call returned empty output"
-  gh_post_pr_comment "$TARGET_REPO" "$PR_NUMBER" "Auto-review skipped: LLM call returned no output."
+  gh_post_pr_comment "$TARGET_REPO" "$PR_NUMBER" "Got no response from the LLM — skipping review. Will retry on your next push."
   exit 0
 fi
 printf '%s\n' "$raw_output" > "/tmp/claude-review-${TARGET_REPO//\//__}-${PR_NUMBER}.txt"
@@ -147,14 +147,14 @@ response_lines="$(wc -l <<<"$raw_output" | tr -d ' ')"
 log INFO "LLM response received (${response_lines} lines) — parsing review JSON"
 if ! review_json="$(extract_json_payload "$raw_output")"; then
   log ERROR "Failed to parse structured review output (${response_lines} lines) — raw output: ${raw_output:0:500}"
-  gh_post_pr_comment "$TARGET_REPO" "$PR_NUMBER" "Review failed: LLM did not return valid JSON."$'\n\n'"**Raw output:**"$'\n```\n'"${raw_output:0:6000}"$'\n```'
+  gh_post_pr_comment "$TARGET_REPO" "$PR_NUMBER" "Something went wrong with the review — got an unexpected response from the LLM."$'\n\n'"**Raw output:**"$'\n```\n'"${raw_output:0:6000}"$'\n```'
   exit 1
 fi
 
 log INFO "Resolving PR head SHA for inline comments"
 head_sha="$(gh_get_pr "$TARGET_REPO" "$PR_NUMBER" "headRefOid" | jq -r '.headRefOid // empty')"
 if [[ -z "$head_sha" ]]; then
-  gh_post_pr_comment "$TARGET_REPO" "$PR_NUMBER" "Review complete but could not post inline comments: unable to resolve PR head SHA."
+  gh_post_pr_comment "$TARGET_REPO" "$PR_NUMBER" "Finished the review but couldn't attach inline comments — couldn't resolve the PR head commit."
   exit 0
 fi
 summary="$(jq -r '.summary // "No summary provided."' <<<"$review_json")"
@@ -165,6 +165,9 @@ major_count="$(jq -r '[.findings[]? | select(.severity == "major")] | length' <<
 minor_count="$(jq -r '[.findings[]? | select(.severity == "minor")] | length' <<<"$review_json")"
 nit_count="$(jq -r '[.findings[]? | select(.severity == "nit")] | length' <<<"$review_json")"
 log INFO "Review findings: critical=$critical_count major=$major_count minor=$minor_count nit=$nit_count verdict=$verdict"
+
+_hash_cmd="sha1sum"
+command -v shasum >/dev/null 2>&1 && _hash_cmd="shasum"
 
 fallback_findings=""
 finding_count="$(jq '.findings // [] | length' <<<"$review_json")"
@@ -182,7 +185,7 @@ if [[ "$finding_count" -gt 0 ]]; then
     recommendation="$(jq -r '.recommendation // ""' <<<"$finding")"
 
     finding_seed="$path|$line|$title|$severity"
-    finding_id="$(printf '%s' "$finding_seed" | (command -v shasum >/dev/null 2>&1 && shasum || sha1sum) | awk '{print $1}' | cut -c1-12)"
+    finding_id="$(printf '%s' "$finding_seed" | $_hash_cmd | awk '{print $1}' | cut -c1-12)"
 
     severity_text="$(severity_label "$severity")"
     body="$(printf 'Review Comment(Severity:%s)\n%s\n\n%s\n\n<!-- SENTINEL:FINDING id=%s severity=%s -->' \

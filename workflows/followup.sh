@@ -133,10 +133,10 @@ Return ONLY JSON: {\"fixed\": true|false, \"reason\": \"...\"}."
       if [[ "$fixed" == "true" ]]; then
         gh_resolve_review_thread "$thread_id"
       else
-        gh_reply_to_review_comment "$TARGET_REPO" "$PR_NUMBER" "$latest_comment_id" "Thanks for the update. I re-checked this and it does not appear fully resolved yet: $reason"
+        gh_reply_to_review_comment "$TARGET_REPO" "$PR_NUMBER" "$latest_comment_id" "Took another look — doesn't seem fully addressed yet. $reason"
       fi
     else
-      gh_reply_to_review_comment "$TARGET_REPO" "$PR_NUMBER" "$latest_comment_id" "I could not verify this change automatically yet. Please share exact commit/file context for this thread."
+      gh_reply_to_review_comment "$TARGET_REPO" "$PR_NUMBER" "$latest_comment_id" "Couldn't verify this automatically — mind pointing me to the specific commit or file that addresses it?"
     fi
   else
     validate_prompt="You are validating whether a non-fix reply is acceptable to close a review thread.
@@ -158,10 +158,10 @@ Return ONLY JSON: {\"accepted\": true|false, \"reason\": \"...\", \"learning\": 
         record_exception "$path" "$thread_id" "$reason" "$learning"
         gh_resolve_review_thread "$thread_id"
       else
-        gh_reply_to_review_comment "$TARGET_REPO" "$PR_NUMBER" "$latest_comment_id" "I reviewed the rationale and cannot close this yet: $reason"
+        gh_reply_to_review_comment "$TARGET_REPO" "$PR_NUMBER" "$latest_comment_id" "Looked at the reasoning here, but not quite enough to close this thread: $reason"
       fi
     else
-      gh_reply_to_review_comment "$TARGET_REPO" "$PR_NUMBER" "$latest_comment_id" "I could not evaluate this rationale automatically yet. Please provide more concrete technical context."
+      gh_reply_to_review_comment "$TARGET_REPO" "$PR_NUMBER" "$latest_comment_id" "Couldn't evaluate this one automatically — a bit more context on the technical reasoning would help."
     fi
   fi
 done <<< "$candidates"

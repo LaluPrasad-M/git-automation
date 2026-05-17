@@ -35,7 +35,7 @@ fi
 failures="$(jq -r '.statusCheckRollup[]? | select((.conclusion // .state) != "SUCCESS" and (.conclusion // .state) != "NEUTRAL" and (.conclusion // .state) != "SKIPPED") | .name' <<<"$pr_meta")"
 if [[ -n "$failures" ]]; then
   log SKIP "Approve blocked — CI failures: $failures"
-  gh_post_pr_comment "$TARGET_REPO" "$PR_NUMBER" "Auto-approve blocked: some CI checks are not passing."
+  gh_post_pr_comment "$TARGET_REPO" "$PR_NUMBER" "Holding off on approval — some CI checks are still failing. I'll retry once they're green."
   exit 0
 fi
 
@@ -52,7 +52,7 @@ open_sentinel_threads="$(jq -r --arg bot "${MY_GITHUB_USERNAME:-}" '[
   | select($botCount > 0)
 ] | length' <<<"$threads_json")"
 if [[ "$open_sentinel_threads" -gt 0 ]]; then
-  gh_post_pr_comment "$TARGET_REPO" "$PR_NUMBER" "Auto-approval deferred: $open_sentinel_threads unresolved sentinel review thread(s) remain."
+  gh_post_pr_comment "$TARGET_REPO" "$PR_NUMBER" "There are still $open_sentinel_threads unresolved review thread(s) — resolve those first and I'll take another look."
   exit 0
 fi
 
@@ -61,7 +61,7 @@ if [[ "$required_checks_json" != "null" && "$required_checks_json" != "[]" ]]; t
     [[ -z "$chk" ]] && continue
     found="$(jq -r --arg n "$chk" '.statusCheckRollup[]? | select(.name == $n) | .name' <<<"$pr_meta" | head -n1)"
     if [[ -z "$found" ]]; then
-      gh_post_pr_comment "$TARGET_REPO" "$PR_NUMBER" "Auto-approve blocked: required check '$chk' was not found."
+      gh_post_pr_comment "$TARGET_REPO" "$PR_NUMBER" "Required check \`$chk\` wasn't found in the CI results — can't approve yet."
       exit 0
     fi
   done < <(jq -r '.[]' <<<"$required_checks_json")
@@ -75,24 +75,27 @@ prompt="${prompt//\{\{PR_NUMBER\}\}/$PR_NUMBER}"
 prompt="${prompt//\{\{TARGET_REPO\}\}/$TARGET_REPO}"
 prompt="${prompt//\{\{CI_STATUS\}\}/$ci_checks}"
 
-
 log INFO "Calling LLM for approval decision on $TARGET_REPO#$PR_NUMBER"
 _llm_out="$(call_llm "$prompt" "gh,cat,grep")" || true
 if [[ -z "$_llm_out" ]]; then
   log WARN "LLM returned empty output — skipping approval"
-  gh_post_pr_comment "$TARGET_REPO" "$PR_NUMBER" "Auto-approval skipped: LLM call returned no output."
+  gh_post_pr_comment "$TARGET_REPO" "$PR_NUMBER" "Ran into an issue — got no response from the LLM. Will retry on the next event."
   exit 0
 fi
 decision="$(grep 'DECISION:' <<<"$_llm_out" | tail -n 1 || true)"
 log INFO "LLM decision: $decision"
+if [[ -z "$decision" ]]; then
+  log WARN "LLM output contained no DECISION line — skipping approval"
+  gh_post_pr_comment "$TARGET_REPO" "$PR_NUMBER" "Something went wrong — couldn't parse a decision from the review. Will retry on the next event."
+  exit 0
+fi
 if grep -q "DECISION: APPROVE" <<<"$decision"; then
-  gh_post_pr_review_approve "$TARGET_REPO" "$PR_NUMBER" "Auto-approved by Claude Git Sentinel after CI and quality checks."
+  gh_post_pr_review_approve "$TARGET_REPO" "$PR_NUMBER" "Looks good — CI is passing and review threads are resolved. Approving."
 elif grep -q "DECISION: COMMENT - " <<<"$decision"; then
   reason="${decision#DECISION: COMMENT - }"
-  gh_post_pr_comment "$TARGET_REPO" "$PR_NUMBER" "Auto-approval deferred: $reason"
-  gh_post_pr_comment "$TARGET_REPO" "$PR_NUMBER" "Please respond to these comments. Approval will be retried on subsequent events."
+  gh_post_pr_comment "$TARGET_REPO" "$PR_NUMBER" "Not quite ready to approve: $reason"$'\n\n'"Once you've addressed the above, I'll take another look on your next push."
 else
   reason="${decision#DECISION: BLOCK - }"
   log WARN "LLM blocked approval for $TARGET_REPO#$PR_NUMBER: $reason"
-  gh_post_pr_comment "$TARGET_REPO" "$PR_NUMBER" "Auto-approve blocked: $reason"
+  gh_post_pr_comment "$TARGET_REPO" "$PR_NUMBER" "Blocking this one: $reason"
 fi

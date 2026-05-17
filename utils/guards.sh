@@ -25,7 +25,6 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-
 should_skip="false"
 
 if [[ "$action" == "merge" ]]; then

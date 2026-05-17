@@ -212,7 +212,6 @@ while true; do
     fi
 
     new_events_file="$(mktemp)"
-    trap 'rm -f "$new_events_file"' EXIT
     while IFS= read -r event; do
       event_id="$(jq -r '.id // ""' <<<"$event")"
       if [[ -n "$last_id" && "$event_id" == "$last_id" ]]; then
