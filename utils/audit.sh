@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
-_lib="$(dirname "${BASH_SOURCE[0]}")/../shared/lib.sh"
-# shellcheck source=scripts/shared/lib.sh
+
+_logging="$(dirname "${BASH_SOURCE[0]}")/logging.sh"
+# shellcheck source=utils/logging.sh
 # shellcheck disable=SC1091
-source "$_lib"
+source "$_logging"
 
 action="${1:-unknown}"
 status="${2:-unknown}"

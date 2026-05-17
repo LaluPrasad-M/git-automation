@@ -98,7 +98,7 @@ for file in "${files[@]}"; do
     *.sh)
       echo "Type-check (shell syntax): $file"
       run_check "$file (bash -n)" bash -n "$file"
-      if [[ "$file" == scripts/* ]]; then
+      if [[ "$file" == commands/* || "$file" == workflows/* || "$file" == services/* || "$file" == utils/* ]]; then
         shellcheck_files+=("$file")
       fi
       ;;

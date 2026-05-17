@@ -1,11 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-_lib="$(dirname "${BASH_SOURCE[0]}")/../shared/lib.sh"
-[[ -f "$_lib" ]] || { echo "lib.sh not found — ensure scripts/lib.sh is committed" >&2; exit 1; }
-# shellcheck source=scripts/lib.sh
+_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck disable=SC1091
-source "$_lib"
+source "$_root/utils/logging.sh"
+# shellcheck disable=SC1091
+source "$_root/utils/policy.sh"
+# shellcheck disable=SC1091
+source "$_root/services/github/pr_service.sh"
+# shellcheck disable=SC1091
+source "$_root/services/github/comment_service.sh"
+# shellcheck disable=SC1091
+source "$_root/services/github/merge_service.sh"
 
 merge_method="$(read_policy 'merge.method')"
 [[ -z "$merge_method" ]] && merge_method=squash
@@ -28,7 +34,7 @@ fi
 
 poll_seconds=180
 while true; do
-  pr_json="$(gh pr view "$PR_NUMBER" --repo "$TARGET_REPO" --json reviews,reviewThreads,statusCheckRollup,mergeable,title,labels)"
+  pr_json="$(gh_get_pr "$TARGET_REPO" "$PR_NUMBER" "reviews,reviewThreads,statusCheckRollup,mergeable,title,labels")"
 
   has_do_not_merge_label="$(jq '[.labels[]? | (.name // "") | ascii_downcase | select(. == "do-not-merge")] | length > 0' <<<"$pr_json")"
   if [[ "$has_do_not_merge_label" == "true" ]]; then
@@ -91,5 +97,5 @@ if [[ "$mergeable" != "MERGEABLE" ]]; then
   exit 0
 fi
 
-gh pr comment "$PR_NUMBER" --repo "$TARGET_REPO" --body "All checks passed. Merging automatically."
-gh pr merge "$PR_NUMBER" --repo "$TARGET_REPO" --"$merge_method" --body "Auto-merged by Claude Git Sentinel"
+gh_post_pr_comment "$TARGET_REPO" "$PR_NUMBER" "All checks passed. Merging automatically."
+gh_merge_pr "$TARGET_REPO" "$PR_NUMBER" "$merge_method" "Auto-merged by Claude Git Sentinel"

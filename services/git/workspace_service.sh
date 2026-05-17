@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-trap 'echo "[ERROR] setup-workspace.sh failed at line $LINENO (exit $?)" >&2' ERR
+_logging="$(dirname "${BASH_SOURCE[0]}")/../../utils/logging.sh"
+# shellcheck source=utils/logging.sh
+# shellcheck disable=SC1091
+source "$_logging"
+
+trap 'log ERROR "workspace_service.sh failed at line $LINENO (exit $?)"' ERR
 
 work_dir="${WORK_DIR:-/tmp/sentinel-workspace}"
 target_dir="$work_dir/target"
@@ -13,10 +18,10 @@ if [[ -d "$target_dir/.git" ]]; then
   existing_remote="$(git -C "$target_dir" remote get-url origin 2>/dev/null || true)"
   expected_remote="https://x-access-token:${GH_TOKEN}@github.com/${TARGET_REPO}.git"
   if [[ "$existing_remote" == "$expected_remote" ]]; then
-    echo "Workspace exists for $TARGET_REPO — fetching latest"
+    log INFO "Workspace exists for $TARGET_REPO — fetching latest"
     git -C "$target_dir" fetch --depth="$fetch_depth" origin
   else
-    echo "Workspace exists but for different repo — re-cloning"
+    log INFO "Workspace exists but for different repo — re-cloning"
     rm -rf "$target_dir"
   fi
 fi
@@ -40,7 +45,7 @@ if [[ -n "${PR_NUMBER:-}" ]]; then
     # Fallback to detached checkout by head SHA when pull ref fetch is unavailable.
     head_sha="$(gh pr view "$PR_NUMBER" --repo "$TARGET_REPO" --json headRefOid --jq '.headRefOid // empty')"
     if [[ -z "$head_sha" ]]; then
-      echo "Unable to resolve PR head SHA for ${TARGET_REPO}#${PR_NUMBER}" >&2
+      log ERROR "Unable to resolve PR head SHA for ${TARGET_REPO}#${PR_NUMBER}"
       exit 1
     fi
     git fetch --depth="$fetch_depth" origin "$head_sha"

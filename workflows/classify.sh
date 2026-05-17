@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
-_lib="$(dirname "${BASH_SOURCE[0]}")/../shared/lib.sh"
-# shellcheck source=scripts/shared/lib.sh
+
+_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=utils/logging.sh
 # shellcheck disable=SC1091
-source "$_lib"
+source "$_root/utils/logging.sh"
+# shellcheck source=services/github/pr_service.sh
+# shellcheck disable=SC1091
+source "$_root/services/github/pr_service.sh"
 
 if [[ $# -lt 1 ]]; then
   echo "Usage: $0 '<client_payload_json>'" >&2
@@ -40,7 +44,7 @@ fi
 
 pr_url="https://github.com/$target_repo/pull/$pr_number"
 
-pr_json="$(gh pr view "$pr_number" --repo "$target_repo" --json author,state,title,reviewRequests 2>/dev/null || echo '{}')"
+pr_json="$(gh_get_pr "$target_repo" "$pr_number" "author,state,title,reviewRequests" 2>/dev/null || echo '{}')"
 pr_author="$(jq -r '.author.login // "unknown"' <<<"$pr_json")"
 pr_state="$(jq -r '.state // "unknown"' <<<"$pr_json")"
 pr_title="$(jq -r '.title // "unknown"' <<<"$pr_json")"

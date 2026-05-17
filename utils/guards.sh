@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
-_lib="$(dirname "${BASH_SOURCE[0]}")/../shared/lib.sh"
-# shellcheck source=scripts/shared/lib.sh
+
+_logging="$(dirname "${BASH_SOURCE[0]}")/logging.sh"
+# shellcheck source=utils/logging.sh
 # shellcheck disable=SC1091
-source "$_lib"
+source "$_logging"
 
 pr_author=""
 bot_user=""
@@ -46,8 +47,6 @@ if [[ "${DRY_RUN:-false}" == "true" ]]; then
   log INFO "DRY_RUN is on — no actions will be taken"
   should_skip="true"
 fi
-
-
 
 echo "should_skip=$should_skip" >> "$GITHUB_OUTPUT"
 if [[ "$should_skip" == "true" ]]; then

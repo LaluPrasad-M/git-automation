@@ -1,19 +1,32 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-_lib="$(dirname "${BASH_SOURCE[0]}")/../shared/lib.sh"
-[[ -f "$_lib" ]] || { echo "lib.sh not found — ensure scripts/shared/lib.sh is committed" >&2; exit 1; }
-# shellcheck source=scripts/lib.sh
+_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck disable=SC1091
-source "$_lib"
+source "$_root/utils/logging.sh"
+# shellcheck disable=SC1091
+source "$_root/utils/policy.sh"
+# shellcheck disable=SC1091
+source "$_root/utils/authors.sh"
+# shellcheck disable=SC1091
+source "$_root/services/github/pr_service.sh"
+# shellcheck disable=SC1091
+source "$_root/services/github/comment_service.sh"
+# shellcheck disable=SC1091
+source "$_root/services/github/review_service.sh"
+# shellcheck disable=SC1091
+source "$_root/services/ai/ai_service.sh"
+# shellcheck disable=SC1091
+source "$_root/services/ai/prompt_service.sh"
+# shellcheck disable=SC1091
+source "$_root/services/ai/response_parser.sh"
 
 trap 'log ERROR "review.sh failed at line $LINENO (exit $?)"' ERR
 
-# shellcheck disable=SC2016
-is_reviewer="$(gh pr view "$PR_NUMBER" --repo "$TARGET_REPO" --json reviewRequests \
+is_reviewer="$(gh_get_pr "$TARGET_REPO" "$PR_NUMBER" "reviewRequests" \
   | jq --arg me "${MY_GITHUB_USERNAME:-}" '[.reviewRequests[]? | select(.login == $me)] | length > 0')"
 
-pr_author="$(gh pr view "$PR_NUMBER" --repo "$TARGET_REPO" --json author --jq '.author.login')"
+pr_author="$(gh_get_pr "$TARGET_REPO" "$PR_NUMBER" "author" | jq -r '.author.login')"
 author_whitelisted="false"
 if [[ -n "${AUTO_REVIEW_AUTHORS:-}" ]]; then
   is_auto_review_author_for_repo "${TARGET_REPO:-}" "$pr_author" "$AUTO_REVIEW_AUTHORS" && author_whitelisted="true"
@@ -27,7 +40,7 @@ if [[ "$is_own_pr" != "true" && "$is_reviewer" != "true" && "$author_whitelisted
   exit 0
 fi
 
-already_approved="$(gh pr view "$PR_NUMBER" --repo "$TARGET_REPO" --json reviews 2>/dev/null \
+already_approved="$(gh_get_pr "$TARGET_REPO" "$PR_NUMBER" "reviews" 2>/dev/null \
   | jq --arg me "${MY_GITHUB_USERNAME:-}" \
     '[.reviews[]? | select(.author.login == $me and .state == "APPROVED")] | length > 0' \
   || echo false)"
@@ -36,34 +49,7 @@ if [[ "$already_approved" == "true" ]]; then
   exit 0
 fi
 
-extract_json_payload() {
-  local raw="$1"
-  if jq -e . >/dev/null 2>&1 <<<"$raw"; then
-    printf '%s' "$raw"
-    return 0
-  fi
-
-  local fenced
-  fenced="$(printf '%s' "$raw" | awk '/```json/{flag=1;next}/```/{if(flag){flag=0;exit}}flag')"
-  if [[ -n "$fenced" ]] && jq -e . >/dev/null 2>&1 <<<"$fenced"; then
-    printf '%s' "$fenced"
-    return 0
-  fi
-
-  return 1
-}
-
-severity_label() {
-  case "$1" in
-    critical) echo "Critical" ;;
-    major) echo "Major" ;;
-    minor) echo "Minor" ;;
-    nit) echo "Nit" ;;
-    *) echo "Minor" ;;
-  esac
-}
-
-bash "$(dirname "${BASH_SOURCE[0]}")/../shared/setup-workspace.sh"
+bash "$_root/services/git/workspace_service.sh"
 _new_ws="$(grep '^WORKSPACE=' "${GITHUB_ENV:-/dev/null}" | tail -1 | cut -d= -f2-)"
 [[ -n "$_new_ws" ]] && { export WORKSPACE="$_new_ws"; cd "$WORKSPACE"; }
 
@@ -71,19 +57,19 @@ log INFO "Fetching diff for $TARGET_REPO#$PR_NUMBER"
 max_diff_lines="$(read_policy 'review.max_diff_lines')"
 [[ -z "$max_diff_lines" ]] && max_diff_lines=2500
 
-diff_output="$(gh pr diff "$PR_NUMBER" --repo "$TARGET_REPO" 2>&1)" || {
-  gh pr comment "$PR_NUMBER" --repo "$TARGET_REPO" --body "Auto-review skipped: unable to fetch PR diff."
+diff_output="$(gh_get_pr_diff "$TARGET_REPO" "$PR_NUMBER" 2>&1)" || {
+  gh_post_pr_comment "$TARGET_REPO" "$PR_NUMBER" "Auto-review skipped: unable to fetch PR diff."
   exit 0
 }
 diff_lines="$(wc -l <<<"$diff_output" | tr -d ' ')"
 log INFO "Diff fetched — $diff_lines lines"
 if [[ "$diff_lines" -gt "$max_diff_lines" ]]; then
-  gh pr comment "$PR_NUMBER" --repo "$TARGET_REPO" --body "This PR has $diff_lines diff lines which exceeds the auto-review limit of $max_diff_lines. Please split it into smaller focused PRs so each can be reviewed effectively."
+  gh_post_pr_comment "$TARGET_REPO" "$PR_NUMBER" "This PR has $diff_lines diff lines which exceeds the auto-review limit of $max_diff_lines. Please split it into smaller focused PRs so each can be reviewed effectively."
   exit 0
 fi
 
 log INFO "Fetching PR metadata"
-pr_json="$(gh pr view "$PR_NUMBER" --repo "$TARGET_REPO" --json title,author,additions,deletions,changedFiles)"
+pr_json="$(gh_get_pr "$TARGET_REPO" "$PR_NUMBER" "title,author,additions,deletions,changedFiles")"
 pr_title="$(jq -r '.title' <<<"$pr_json")"
 pr_author="$(jq -r '.author.login' <<<"$pr_json")"
 files_changed="$(jq -r '.changedFiles' <<<"$pr_json")"
@@ -108,15 +94,7 @@ prompt="${prompt//\{\{LINES_REMOVED\}\}/$lines_removed}"
 
 repo_skills_dir="$prompt_root/review"
 if [[ -d "$repo_skills_dir" ]]; then
-  skill_manifest=""
-  while IFS= read -r skill_file; do
-    [[ -z "$skill_file" ]] && continue
-    skill_name="$(basename "$skill_file")"
-    description="$(sed -n 's/^description:[[:space:]]*//p' "$skill_file" | head -1 | tr -d '"')"
-    [[ -z "$description" ]] && description="$skill_name"
-    skill_manifest+="- $skill_name: $description"$'\n'
-  done < <(find "$repo_skills_dir" -maxdepth 1 -type f ! -name 'review.md' | sort)
-
+  skill_manifest="$(build_skill_manifest "$repo_skills_dir" "review.md")"
   if [[ -n "$skill_manifest" ]]; then
     prompt+=$'\n\n## Available Skill Files\n'
     prompt+="Read only the skill files relevant to the files changed in this PR. Use \`cat\` to read them from: $repo_skills_dir/"$'\n'
@@ -145,14 +123,14 @@ printf '%s\n' "$raw_output" > /tmp/claude-review-output.txt
 log INFO "LLM response received — parsing review JSON"
 if ! review_json="$(extract_json_payload "$raw_output")"; then
   log WARN "Failed to parse structured review output — posting raw fallback"
-  gh pr comment "$PR_NUMBER" --repo "$TARGET_REPO" --body "Review parsing fallback: unable to parse structured output.\n\n${raw_output:0:6000}"
+  gh_post_pr_comment "$TARGET_REPO" "$PR_NUMBER" "Review parsing fallback: unable to parse structured output.\n\n${raw_output:0:6000}"
   exit 0
 fi
 
 log INFO "Posting inline review comments"
-head_sha="$(gh pr view "$PR_NUMBER" --repo "$TARGET_REPO" --json headRefOid --jq '.headRefOid // empty')"
+head_sha="$(gh_get_pr "$TARGET_REPO" "$PR_NUMBER" "headRefOid" | jq -r '.headRefOid // empty')"
 if [[ -z "$head_sha" ]]; then
-  gh pr comment "$PR_NUMBER" --repo "$TARGET_REPO" --body "Review complete but could not post inline comments: unable to resolve PR head SHA."
+  gh_post_pr_comment "$TARGET_REPO" "$PR_NUMBER" "Review complete but could not post inline comments: unable to resolve PR head SHA."
   exit 0
 fi
 summary="$(jq -r '.summary // "No summary provided."' <<<"$review_json")"
@@ -186,12 +164,7 @@ if [[ "$finding_count" -gt 0 ]]; then
     fi
 
     if [[ -n "$path" && "$path" != "null" && "$line" =~ ^[0-9]+$ && "$line" -gt 0 ]]; then
-      if ! gh api "repos/$TARGET_REPO/pulls/$PR_NUMBER/comments" \
-        -f body="$body" \
-        -f commit_id="$head_sha" \
-        -f path="$path" \
-        -F line="$line" \
-        -f side="RIGHT" >/dev/null 2>&1; then
+      if ! gh_post_inline_comment "$TARGET_REPO" "$PR_NUMBER" "$head_sha" "$path" "$line" "$body" >/dev/null 2>&1; then
         fallback_findings+="$(printf '- [%s] %s:%s - %s\n' "$severity" "$path" "$line" "$title")"
       fi
     else
@@ -204,7 +177,6 @@ summary_body="$(printf 'Review summary: %s\n\nVerdict: %s\nTest gaps: %s' "$summ
 if [[ -n "$fallback_findings" ]]; then
   summary_body+="$(printf '\n\nNon-inline findings (fallback):\n%s' "$fallback_findings")"
 fi
-
 summary_body+="$(printf '\n\nCounts: critical=%s, major=%s, minor=%s, nit=%s' "$critical_count" "$major_count" "$minor_count" "$nit_count")"
 
 summary_severity="nit"
@@ -221,13 +193,13 @@ summary_body="$(printf 'Review Comment(Severity:%s)\n%s' "$summary_severity_text
 log INFO "Submitting review verdict for $TARGET_REPO#$PR_NUMBER (own_pr=$is_own_pr)"
 if [[ "$critical_count" -gt 0 ]]; then
   if [[ "$is_own_pr" == "true" ]]; then
-    gh pr comment "$PR_NUMBER" --repo "$TARGET_REPO" --body "$summary_body"
+    gh_post_pr_comment "$TARGET_REPO" "$PR_NUMBER" "$summary_body"
   else
-    gh pr review "$PR_NUMBER" --repo "$TARGET_REPO" --request-changes --body "$summary_body"
+    gh_post_pr_review_request_changes "$TARGET_REPO" "$PR_NUMBER" "$summary_body"
   fi
 elif [[ "$major_count" -gt 0 || "$is_own_pr" == "true" ]]; then
-  gh pr comment "$PR_NUMBER" --repo "$TARGET_REPO" --body "$summary_body"
+  gh_post_pr_comment "$TARGET_REPO" "$PR_NUMBER" "$summary_body"
 else
-  gh pr review "$PR_NUMBER" --repo "$TARGET_REPO" --approve --body "$summary_body"
+  gh_post_pr_review_approve "$TARGET_REPO" "$PR_NUMBER" "$summary_body"
 fi
 log INFO "Review complete for $TARGET_REPO#$PR_NUMBER"

@@ -1,11 +1,21 @@
 #!/usr/bin/env bash
 set -euo pipefail
-_lib="$(dirname "${BASH_SOURCE[0]}")/../shared/lib.sh"
-# shellcheck source=scripts/shared/lib.sh
-# shellcheck disable=SC1091
-source "$_lib"
 
-trap 'log ERROR "run-dispatch-local.sh failed at line $LINENO (exit $?)"' ERR
+_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=utils/logging.sh
+# shellcheck disable=SC1091
+source "$_root/utils/logging.sh"
+# shellcheck source=utils/authors.sh
+# shellcheck disable=SC1091
+source "$_root/utils/authors.sh"
+# shellcheck source=utils/policy.sh
+# shellcheck disable=SC1091
+source "$_root/utils/policy.sh"
+# shellcheck source=services/github/pr_service.sh
+# shellcheck disable=SC1091
+source "$_root/services/github/pr_service.sh"
+
+trap 'log ERROR "dispatch.sh failed at line $LINENO (exit $?)"' ERR
 
 if [[ $# -lt 1 ]]; then
   echo "Usage: $0 '<client_payload_json>'" >&2
@@ -15,12 +25,11 @@ fi
 payload="$1"
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-repo_root="$(cd "$script_dir/../.." && pwd)"
-workspace="${WORKSPACE:-$repo_root}"
+workspace="${WORKSPACE:-$_root}"
 
 if [[ ! -d "$workspace" ]]; then
-  if [[ -d "$repo_root" ]]; then
-    workspace="$repo_root"
+  if [[ -d "$_root" ]]; then
+    workspace="$_root"
   elif [[ -d "/app" ]]; then
     workspace="/app"
   else
@@ -36,12 +45,11 @@ tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
 
 classify_out="$tmp_dir/classify.out"
-policy_out="$tmp_dir/policy.out"
 guard_out="$tmp_dir/guard.out"
 policy_env="$tmp_dir/policy.env"
 
 export GITHUB_OUTPUT="$classify_out"
-bash scripts/pipeline/classify.sh "$(jq -c '.client_payload // .' <<<"$payload")"
+bash "$script_dir/classify.sh" "$(jq -c '.client_payload // .' <<<"$payload")"
 
 action="$(grep -E '^action=' "$classify_out" | tail -n1 | cut -d= -f2-)"
 pr_number="$(grep -E '^pr_number=' "$classify_out" | tail -n1 | cut -d= -f2-)"
@@ -60,7 +68,7 @@ if [[ -z "$action" || "$action" == "unknown" ]]; then
 fi
 
 export GITHUB_OUTPUT="$guard_out"
-bash scripts/pipeline/guards.sh \
+bash "$_root/utils/guards.sh" \
   --author "$pr_author" \
   --bot-user "${MY_GITHUB_USERNAME:-}" \
   --action "$action" \
@@ -79,7 +87,7 @@ if [[ "$action" == "review" || "$action" == "followup" ]]; then
     : # allowed — own PR review
   else
     # shellcheck disable=SC2016
-    _is_reviewer="$(gh pr view "$pr_number" --repo "$target_repo" --json reviewRequests 2>/dev/null \
+    _is_reviewer="$(gh_get_pr "$target_repo" "$pr_number" "reviewRequests" 2>/dev/null \
       | jq --arg me "${MY_GITHUB_USERNAME:-}" \
         '[.reviewRequests[]? | select(.login == $me)] | length > 0' \
       || echo false)"
@@ -94,12 +102,12 @@ if [[ "$action" == "review" || "$action" == "followup" ]]; then
   fi
 fi
 
-export GITHUB_OUTPUT="$policy_out"
+export GITHUB_OUTPUT="$tmp_dir/policy.out"
 export GITHUB_ENV="$policy_env"
-bash scripts/pipeline/load-policy.sh "$target_repo"
+load_policy "$target_repo"
 
-policy_file="$(grep -E '^policy_file=' "$policy_out" | tail -n1 | cut -d= -f2-)"
-prompt_dir="$(grep -E '^prompt_dir=' "$policy_out" | tail -n1 | cut -d= -f2-)"
+policy_file="$(grep -E '^policy_file=' "$tmp_dir/policy.out" | tail -n1 | cut -d= -f2-)"
+prompt_dir="$(grep -E '^prompt_dir=' "$tmp_dir/policy.out" | tail -n1 | cut -d= -f2-)"
 
 export TARGET_REPO="$target_repo"
 export POLICY_FILE="$policy_file"
@@ -121,19 +129,9 @@ export PR_NUMBER="$pr_number"
 export PROMPT_DIR="$prompt_dir"
 
 case "$action" in
-  review)
-    bash scripts/actions/review.sh
-    ;;
-  followup)
-    bash scripts/actions/thread-followup.sh
-    ;;
-  approve)
-    bash scripts/actions/approve.sh
-    ;;
-  merge)
-    bash scripts/actions/merge.sh
-    ;;
-  *)
-    echo "Unsupported action: $action"
-    ;;
+  review)   bash "$script_dir/review.sh" ;;
+  followup) bash "$script_dir/followup.sh" ;;
+  approve)  bash "$script_dir/approve.sh" ;;
+  merge)    bash "$script_dir/merge.sh" ;;
+  *)        log WARN "Unsupported action: $action" ;;
 esac

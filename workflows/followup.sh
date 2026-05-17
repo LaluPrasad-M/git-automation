@@ -1,34 +1,27 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-_lib="$(dirname "${BASH_SOURCE[0]}")/../shared/lib.sh"
-[[ -f "$_lib" ]] || { echo "lib.sh not found" >&2; exit 1; }
-# shellcheck source=scripts/shared/lib.sh
+_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck disable=SC1091
-source "$_lib"
+source "$_root/utils/logging.sh"
+# shellcheck disable=SC1091
+source "$_root/utils/policy.sh"
+# shellcheck disable=SC1091
+source "$_root/services/github/pr_service.sh"
+# shellcheck disable=SC1091
+source "$_root/services/github/review_service.sh"
+# shellcheck disable=SC1091
+source "$_root/services/github/graphql_service.sh"
+# shellcheck disable=SC1091
+source "$_root/services/ai/ai_service.sh"
+# shellcheck disable=SC1091
+source "$_root/services/ai/response_parser.sh"
 
-trap 'log ERROR "thread-followup.sh failed at line $LINENO (exit $?)"' ERR
+trap 'log ERROR "followup.sh failed at line $LINENO (exit $?)"' ERR
 
 owner="${TARGET_REPO%/*}"
-repo="${TARGET_REPO#*/}"
+repo_name="${TARGET_REPO#*/}"
 bot_user="${MY_GITHUB_USERNAME}"
-
-extract_json_payload() {
-  local raw="$1"
-  if jq -e . >/dev/null 2>&1 <<<"$raw"; then
-    printf '%s' "$raw"
-    return 0
-  fi
-
-  local fenced
-  fenced="$(printf '%s' "$raw" | awk '/```json/{flag=1;next}/```/{if(flag){flag=0;exit}}flag')"
-  if [[ -n "$fenced" ]] && jq -e . >/dev/null 2>&1 <<<"$fenced"; then
-    printf '%s' "$fenced"
-    return 0
-  fi
-
-  return 1
-}
 
 is_positive_reply() {
   local text="$1"
@@ -47,21 +40,6 @@ is_positive_reply() {
   return 1
 }
 
-post_thread_reply() {
-  local in_reply_to="$1"
-  local body="$2"
-  gh api "repos/$TARGET_REPO/pulls/$PR_NUMBER/comments" \
-    -f body="$body" \
-    -F in_reply_to="$in_reply_to" >/dev/null
-}
-
-resolve_thread() {
-  local thread_id="$1"
-  gh api graphql \
-    -f query="mutation(\$threadId:ID!){resolveReviewThread(input:{threadId:\$threadId}){thread{id isResolved}}}" \
-    -F threadId="$thread_id" >/dev/null
-}
-
 record_exception() {
   local path="$1"
   local thread_id="$2"
@@ -76,7 +54,7 @@ record_exception() {
     >> "$log_file"
 }
 
-already_approved="$(gh pr view "$PR_NUMBER" --repo "$TARGET_REPO" --json reviews 2>/dev/null \
+already_approved="$(gh_get_pr "$TARGET_REPO" "$PR_NUMBER" "reviews" 2>/dev/null \
   | jq --arg me "$bot_user" \
     '[.reviews[]? | select(.author.login == $me and .state == "APPROVED")] | length > 0' \
   || echo false)"
@@ -85,8 +63,7 @@ if [[ "$already_approved" == "true" ]]; then
   exit 0
 fi
 
-threads_query="query(\$owner:String!,\$name:String!,\$number:Int!){repository(owner:\$owner,name:\$name){pullRequest(number:\$number){reviewThreads(first:100){nodes{id isResolved path comments(first:50){nodes{id databaseId body author{login} createdAt}}}}}}}"
-threads_json="$(gh api graphql -f query="$threads_query" -F owner="$owner" -F name="$repo" -F number="$PR_NUMBER")"
+threads_json="$(gh_get_pr_review_threads "$owner" "$repo_name" "$PR_NUMBER")"
 
 candidates="$(jq -c --arg bot "$bot_user" '
   .data.repository.pullRequest.reviewThreads.nodes[]?
@@ -112,13 +89,13 @@ if [[ -z "$candidates" ]]; then
   exit 0
 fi
 
-bash "$(dirname "${BASH_SOURCE[0]}")/../shared/setup-workspace.sh"
+bash "$_root/services/git/workspace_service.sh"
 _new_ws="$(grep '^WORKSPACE=' "${GITHUB_ENV:-/dev/null}" | tail -1 | cut -d= -f2-)"
 [[ -n "$_new_ws" ]] && { export WORKSPACE="$_new_ws"; cd "$WORKSPACE"; }
 
-base_ref="$(gh pr view "$PR_NUMBER" --repo "$TARGET_REPO" --json baseRefName --jq '.baseRefName // empty')"
+base_ref="$(gh_get_pr "$TARGET_REPO" "$PR_NUMBER" "baseRefName" | jq -r '.baseRefName // empty')"
 if [[ -z "$base_ref" ]]; then
-  log ERROR "Unable to resolve base ref for ${TARGET_REPO}#${PR_NUMBER} — skipping follow-up" >&2
+  log ERROR "Unable to resolve base ref for ${TARGET_REPO}#${PR_NUMBER} — skipping follow-up"
   exit 1
 fi
 git fetch origin "$base_ref" >/dev/null 2>&1 || true
@@ -154,12 +131,12 @@ Return ONLY JSON: {\"fixed\": true|false, \"reason\": \"...\"}."
       fixed="$(jq -r '.fixed // false' <<<"$verify_json")"
       reason="$(jq -r '.reason // "No reason provided"' <<<"$verify_json")"
       if [[ "$fixed" == "true" ]]; then
-        resolve_thread "$thread_id"
+        gh_resolve_review_thread "$thread_id"
       else
-        post_thread_reply "$latest_comment_id" "Thanks for the update. I re-checked this and it does not appear fully resolved yet: $reason"
+        gh_reply_to_review_comment "$TARGET_REPO" "$PR_NUMBER" "$latest_comment_id" "Thanks for the update. I re-checked this and it does not appear fully resolved yet: $reason"
       fi
     else
-      post_thread_reply "$latest_comment_id" "I could not verify this change automatically yet. Please share exact commit/file context for this thread."
+      gh_reply_to_review_comment "$TARGET_REPO" "$PR_NUMBER" "$latest_comment_id" "I could not verify this change automatically yet. Please share exact commit/file context for this thread."
     fi
   else
     validate_prompt="You are validating whether a non-fix reply is acceptable to close a review thread.
@@ -179,17 +156,17 @@ Return ONLY JSON: {\"accepted\": true|false, \"reason\": \"...\", \"learning\": 
       learning="$(jq -r '.learning // ""' <<<"$validate_json")"
       if [[ "$accepted" == "true" ]]; then
         record_exception "$path" "$thread_id" "$reason" "$learning"
-        resolve_thread "$thread_id"
+        gh_resolve_review_thread "$thread_id"
       else
-        post_thread_reply "$latest_comment_id" "I reviewed the rationale and cannot close this yet: $reason"
+        gh_reply_to_review_comment "$TARGET_REPO" "$PR_NUMBER" "$latest_comment_id" "I reviewed the rationale and cannot close this yet: $reason"
       fi
     else
-      post_thread_reply "$latest_comment_id" "I could not evaluate this rationale automatically yet. Please provide more concrete technical context."
+      gh_reply_to_review_comment "$TARGET_REPO" "$PR_NUMBER" "$latest_comment_id" "I could not evaluate this rationale automatically yet. Please provide more concrete technical context."
     fi
   fi
 done <<< "$candidates"
 
-threads_after="$(gh api graphql -f query="$threads_query" -F owner="$owner" -F name="$repo" -F number="$PR_NUMBER")"
+threads_after="$(gh_get_pr_review_threads "$owner" "$repo_name" "$PR_NUMBER")"
 remaining="$(jq -r --arg bot "$bot_user" '[
   .data.repository.pullRequest.reviewThreads.nodes[]?
   | select(.isResolved == false)
@@ -198,4 +175,4 @@ remaining="$(jq -r --arg bot "$bot_user" '[
 ] | length' <<<"$threads_after")"
 
 echo "remaining_sentinel_threads=$remaining" >> "$GITHUB_OUTPUT"
-echo "Follow-up complete — $remaining unresolved review thread(s) remaining"
+log INFO "Follow-up complete — $remaining unresolved review thread(s) remaining"

@@ -1,28 +1,39 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cd "$WORKSPACE"
-
-_lib="$(dirname "${BASH_SOURCE[0]}")/../shared/lib.sh"
-[[ -f "$_lib" ]] || { echo "lib.sh not found — ensure scripts/lib.sh is committed" >&2; exit 1; }
-# shellcheck source=scripts/lib.sh
+_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck disable=SC1091
-source "$_lib"
+source "$_root/utils/logging.sh"
+# shellcheck disable=SC1091
+source "$_root/utils/policy.sh"
+# shellcheck disable=SC1091
+source "$_root/services/github/pr_service.sh"
+# shellcheck disable=SC1091
+source "$_root/services/github/comment_service.sh"
+# shellcheck disable=SC1091
+source "$_root/services/github/review_service.sh"
+# shellcheck disable=SC1091
+source "$_root/services/github/graphql_service.sh"
+# shellcheck disable=SC1091
+source "$_root/services/ai/ai_service.sh"
+# shellcheck disable=SC1091
+source "$_root/services/ai/prompt_service.sh"
+
+cd "$WORKSPACE"
 
 required_checks_json="$(read_policy 'approve.required_checks')"
 
-pr_json="$(gh pr view "$PR_NUMBER" --repo "$TARGET_REPO" --json statusCheckRollup)"
+pr_json="$(gh_get_pr "$TARGET_REPO" "$PR_NUMBER" "statusCheckRollup")"
 
 failures="$(jq -r '.statusCheckRollup[]? | select((.conclusion // .state) != "SUCCESS" and (.conclusion // .state) != "NEUTRAL" and (.conclusion // .state) != "SKIPPED") | .name' <<<"$pr_json")"
 if [[ -n "$failures" ]]; then
-  gh pr comment "$PR_NUMBER" --repo "$TARGET_REPO" --body "Auto-approve blocked: some CI checks are not passing."
+  gh_post_pr_comment "$TARGET_REPO" "$PR_NUMBER" "Auto-approve blocked: some CI checks are not passing."
   exit 0
 fi
 
 owner="${TARGET_REPO%/*}"
-repo="${TARGET_REPO#*/}"
-threads_query="query(\$owner:String!,\$name:String!,\$number:Int!){repository(owner:\$owner,name:\$name){pullRequest(number:\$number){reviewThreads(first:100){nodes{isResolved comments(first:50){nodes{body author{login}}}}}}}}"
-threads_json="$(gh api graphql -f query="$threads_query" -F owner="$owner" -F name="$repo" -F number="$PR_NUMBER")"
+repo_name="${TARGET_REPO#*/}"
+threads_json="$(gh_get_pr_review_threads "$owner" "$repo_name" "$PR_NUMBER")"
 open_sentinel_threads="$(jq -r --arg bot "$MY_GITHUB_USERNAME" '[
   .data.repository.pullRequest.reviewThreads.nodes[]?
   | select(.isResolved == false)
@@ -30,7 +41,7 @@ open_sentinel_threads="$(jq -r --arg bot "$MY_GITHUB_USERNAME" '[
   | select($botCount > 0)
 ] | length' <<<"$threads_json")"
 if [[ "$open_sentinel_threads" -gt 0 ]]; then
-  gh pr comment "$PR_NUMBER" --repo "$TARGET_REPO" --body "Auto-approval deferred: $open_sentinel_threads unresolved sentinel review thread(s) remain."
+  gh_post_pr_comment "$TARGET_REPO" "$PR_NUMBER" "Auto-approval deferred: $open_sentinel_threads unresolved sentinel review thread(s) remain."
   exit 0
 fi
 
@@ -39,7 +50,7 @@ if [[ "$required_checks_json" != "null" && "$required_checks_json" != "[]" ]]; t
     [[ -z "$chk" ]] && continue
     found="$(jq -r --arg n "$chk" '.statusCheckRollup[]? | select(.name == $n) | .name' <<<"$pr_json" | head -n1)"
     if [[ -z "$found" ]]; then
-      gh pr comment "$PR_NUMBER" --repo "$TARGET_REPO" --body "Auto-approve blocked: required check '$chk' was not found."
+      gh_post_pr_comment "$TARGET_REPO" "$PR_NUMBER" "Auto-approve blocked: required check '$chk' was not found."
       exit 0
     fi
   done < <(jq -r '.[]' <<<"$required_checks_json")
@@ -57,15 +68,7 @@ prompt="${prompt//\{\{CI_STATUS\}\}/ALL PASSING}"
 
 repo_skills_dir="$prompt_root/approve"
 if [[ -d "$repo_skills_dir" ]]; then
-  skill_manifest=""
-  while IFS= read -r skill_file; do
-    [[ -z "$skill_file" ]] && continue
-    skill_name="$(basename "$skill_file")"
-    description="$(sed -n 's/^description:[[:space:]]*//p' "$skill_file" | head -1 | tr -d '"')"
-    [[ -z "$description" ]] && description="$skill_name"
-    skill_manifest+="- $skill_name: $description"$'\n'
-  done < <(find "$repo_skills_dir" -maxdepth 1 -type f ! -name 'approve.md' | sort)
-
+  skill_manifest="$(build_skill_manifest "$repo_skills_dir" "approve.md")"
   if [[ -n "$skill_manifest" ]]; then
     prompt+=$'\n\n## Available Skill Files\n'
     prompt+="Read only the skill files relevant to the files changed in this PR. Use \`cat\` to read them from: $repo_skills_dir/"$'\n'
@@ -75,12 +78,12 @@ fi
 
 decision="$(call_llm "$prompt" "gh,git,cat,grep" 6 | tail -n 1)"
 if grep -q "DECISION: APPROVE" <<<"$decision"; then
-  gh pr review "$PR_NUMBER" --repo "$TARGET_REPO" --approve --body "Auto-approved by Claude Git Sentinel after CI and quality checks."
+  gh_post_pr_review_approve "$TARGET_REPO" "$PR_NUMBER" "Auto-approved by Claude Git Sentinel after CI and quality checks."
 elif grep -q "DECISION: COMMENT - " <<<"$decision"; then
   reason="${decision#DECISION: COMMENT - }"
-  gh pr comment "$PR_NUMBER" --repo "$TARGET_REPO" --body "Auto-approval deferred: $reason"
-  gh pr comment "$PR_NUMBER" --repo "$TARGET_REPO" --body "Please respond to these comments. Approval will be retried on subsequent events."
+  gh_post_pr_comment "$TARGET_REPO" "$PR_NUMBER" "Auto-approval deferred: $reason"
+  gh_post_pr_comment "$TARGET_REPO" "$PR_NUMBER" "Please respond to these comments. Approval will be retried on subsequent events."
 else
   reason="${decision#DECISION: BLOCK - }"
-  gh pr comment "$PR_NUMBER" --repo "$TARGET_REPO" --body "Auto-approve blocked: $reason"
+  gh_post_pr_comment "$TARGET_REPO" "$PR_NUMBER" "Auto-approve blocked: $reason"
 fi

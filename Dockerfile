@@ -27,4 +27,4 @@ RUN npm install -g @anthropic-ai/claude-code
 
 WORKDIR /app
 
-CMD ["bash", "scripts/event-listener.sh"]
+CMD ["bash", "commands/listen.sh"]

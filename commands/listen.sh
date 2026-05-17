@@ -1,13 +1,21 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-repo_root="$(cd "$script_dir/../.." && pwd)"
-workspace="${WORKSPACE:-$repo_root}"
+_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck disable=SC1091
+source "$_root/utils/logging.sh"
+# shellcheck disable=SC1091
+source "$_root/utils/authors.sh"
+# shellcheck disable=SC1091
+source "$_root/services/github/pr_service.sh"
+# shellcheck disable=SC1091
+source "$_root/services/github/events_service.sh"
+
+workspace="${WORKSPACE:-$_root}"
 
 if [[ ! -d "$workspace" ]]; then
-  if [[ -d "$repo_root" ]]; then
-    workspace="$repo_root"
+  if [[ -d "$_root" ]]; then
+    workspace="$_root"
   elif [[ -d "/app" ]]; then
     workspace="/app"
   else
@@ -37,11 +45,6 @@ parse_target_repos() {
   tr ',' '\n' <<<"$raw" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | sed '/^$/d'
 }
 
-_lib="$(dirname "${BASH_SOURCE[0]}")/../shared/lib.sh"
-# shellcheck source=scripts/shared/lib.sh
-# shellcheck disable=SC1091
-source "$_lib"
-
 state_dir="${STATE_DIR:-$workspace/.state/event-listener}"
 mkdir -p "$state_dir"
 
@@ -53,12 +56,6 @@ done < <(parse_target_repos "$TARGET_REPOS")
 
 repo_count="${#startup_repos[@]}"
 poll_interval="${POLL_INTERVAL_SECONDS:-60}"
-
-watching_repos="none"
-if [[ "$repo_count" -gt 0 ]]; then
-  watching_repos="$(printf '%s,' "${startup_repos[@]}")"
-  watching_repos="${watching_repos%,}"
-fi
 
 log INFO "Sentinel started — watching $repo_count repo(s), polling every ${poll_interval}s"
 for _r in "${startup_repos[@]}"; do
@@ -149,8 +146,7 @@ build_payload() {
       branch="${ref#refs/heads/}"
       [[ -z "$branch" || "$branch" == "$ref" ]] && return 1
       if [[ -z "${MY_GITHUB_USERNAME:-}" ]]; then return 1; fi
-      pr_json="$(gh pr list --repo "$repo" --head "$branch" --state open \
-        --json number,author,isDraft 2>/dev/null || echo '[]')"
+      pr_json="$(gh_pr_list_for_branch "$repo" "$branch")"
       pr_number="$(jq -r '.[0].number // empty' <<<"$pr_json")"
       [[ -z "$pr_number" ]] && return 1
       pr_author="$(jq -r '.[0].author.login // empty' <<<"$pr_json")"
@@ -190,7 +186,7 @@ while true; do
     last_id=""
     [[ -f "$state_file" ]] && last_id="$(cat "$state_file")"
 
-    events_json="$(env GH_PAGER=cat gh api "repos/$repo/events?per_page=100" 2>/dev/null || echo '[]')"
+    events_json="$(gh_repo_events "$repo")"
     newest_id="$(jq -r '.[0].id // ""' <<<"$events_json")"
 
     if [[ -z "$newest_id" ]]; then
@@ -227,7 +223,7 @@ while true; do
             fi
             [[ -n "$pr_number" ]] && touch "$lock_file"
             (
-              if ! bash scripts/listener/run-dispatch-local.sh "$payload"; then
+              if ! bash "$_root/workflows/dispatch.sh" "$payload"; then
                 log WARN "Dispatch failed for $repo event $(jq -r '.id // "unknown"' <<<"$event")"
               fi
               [[ -n "$pr_number" ]] && rm -f "$lock_file"
