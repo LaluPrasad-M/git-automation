@@ -15,7 +15,7 @@ Thanks for your interest in improving Claude Git Sentinel.
 
 - Keep changes focused and minimal.
 - Prefer policy/config updates over hardcoded behavior.
-- Preserve safety guardrails (self-filter, rate-limit, dry-run).
+- Preserve safety guardrails (self-filter, dry-run).
 - Add or update tests for non-trivial behavior changes.
 
 ## Pull Request Checklist

@@ -19,7 +19,7 @@ classify → guards (self-filter) → reviewer/whitelist check → policy → re
 1. PR state is not `OPEN` → skip.
 2. `MY_GITHUB_USERNAME` is not in the PR's reviewer list AND PR author is not in `AUTO_REVIEW_AUTHORS` → skip.
 3. PR author is `MY_GITHUB_USERNAME` → skip (self-filter).
-4. Diff line count exceeds `review.max_diff_lines` (default 2500) → post comment asking to split the PR into smaller tasks, stop.
+4. Changed line count exceeds `MAX_DIFF_LINES` (default 2500, overridable per repo via `review.max_diff_lines` in policy.yml) → post comment, stop.
 
 ### What Happens
 

@@ -34,9 +34,8 @@ This creates for each repo in `TARGET_REPOS`:
 git-listeners/
 └── owner/repo/
     ├── policy.yml       ← override defaults from config/sentinel.yml
-    └── prompts/
-        ├── review/      ← skill files (e.g. frontend-reviewer.md)
-        └── approve/     ← skill files
+    └── review/
+        └── skills/      ← skill files (e.g. frontend-reviewer.md)
 ```
 
 ### 3. Customise

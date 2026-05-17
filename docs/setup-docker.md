@@ -62,7 +62,8 @@ Logs are written to `.state/logs/<owner>__<repo>.log`.
 ## Review triggers
 
 - You are added as a reviewer on a PR
-- A PR is opened by an author in `AUTO_REVIEW_AUTHORS`
+- A PR is opened or pushed by an author in `AUTO_REVIEW_AUTHORS`
+- You open or push to your own PR (`MY_GITHUB_USERNAME` is the PR author)
 
 ## Merge
 

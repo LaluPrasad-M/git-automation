@@ -26,7 +26,7 @@ Look for an `[ERROR]` line immediately before the `[WARN] Dispatch failed` — i
 The LLM call loaded too much into memory. Options:
 - Add `deploy.resources.limits.memory` to `docker-compose.yml` to set a higher limit.
 - Lower `MAX_TURNS` (default 5) to reduce context size.
-- Lower `review.max_diff_lines` in the repo's `policy.yml` (default 2500).
+- Lower `MAX_DIFF_LINES` in `.env` (default 2500), or set `review.max_diff_lines` in the repo's `policy.yml`.
 
 ## Review already in progress
 

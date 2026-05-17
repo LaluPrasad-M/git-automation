@@ -1,6 +1,6 @@
 # GitHub Actions Setup
 
-The GitHub Actions mode runs on GitHub's infrastructure. Reviews are triggered by a scheduled workflow that polls for pending review requests every 15 minutes.
+The GitHub Actions mode runs on GitHub's infrastructure. Reviews are triggered by `repository_dispatch` events sent to `sentinel.yml` — there is no polling or schedule involved.
 
 > **Note:** Out of the box, only the review flow is fully covered. Follow-up, approve, and merge require additional webhook wiring to dispatch events to this control repo.
 
@@ -60,6 +60,6 @@ POST https://api.github.com/repos/<your-org>/git-automation/dispatches
 | | Docker | GitHub Actions |
 |---|---|---|
 | Full pipeline | ✅ | Review only (without webhook wiring) |
-| Always on | ✅ Container | ⏱ Every 15 min |
+| Always on | ✅ Container | ✅ Event-driven (repository_dispatch) |
 | Custom config | ✅ Local gitignored | Requires committing git-listeners/ |
 | Setup complexity | Low | Higher |

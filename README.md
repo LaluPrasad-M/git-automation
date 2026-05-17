@@ -55,6 +55,11 @@ See [SETUP_GUIDE.md](SETUP_GUIDE.md) for full setup instructions.
 | `LLM_PROVIDER` | No | `anthropic` (default) or `openai` |
 | `ANTHROPIC_MODEL` | No | Anthropic model, default `claude-sonnet-4-6` |
 | `MAX_TURNS` | No | Max LLM tool-call turns per review (default: 5) |
+| `MAX_DIFF_LINES` | No | Skip review if PR exceeds this many changed lines (default: 2500) |
+| `MAX_MERGE_POLLS` | No | Max CI poll attempts before merge times out (default: 20) |
+| `STATE_DIR` | No | Override state/checkpoint directory |
+| `WORK_DIR` | No | Override git workspace clone directory |
+| `SENTINEL_LOG` | No | Override audit log file path |
 | `OPENAI_API_KEY` | No | Required when `LLM_PROVIDER=openai` |
 | `OPENAI_MODEL` | No | OpenAI model, default `gpt-4o` |
 
@@ -66,13 +71,9 @@ See [SETUP_GUIDE.md](SETUP_GUIDE.md) for full setup instructions.
 git-listeners/
 └── owner/repo/
     ├── policy.yml          # override sentinel.yml defaults
-    └── prompts/
-        ├── review/
-        │   ├── review.md           # custom review instructions (optional)
-        │   └── frontend-reviewer.md  # skill file — Claude reads if relevant
-        └── approve/
-            ├── approve.md          # custom approve instructions (optional)
-            └── security-check.md   # skill file
+    └── review/
+        └── skills/         # skill files — Claude reads the relevant ones
+            └── frontend-reviewer.md
 ```
 
 `git-listeners/` is gitignored. Re-running `make init` is safe — existing files are never overwritten.
@@ -104,17 +105,21 @@ make ps               # container status
 ## Structure
 
 ```
+commands/                         # entry points (listen.sh, init.sh)
+workflows/                        # orchestration (review, approve, merge, followup)
+services/                         # external calls (github/, ai/, git/)
+utils/                            # shared helpers (logging, policy, guards)
 config/
   sentinel.yml                    # global defaults (policy)
-  prompts/defaults/
-    review/review.md              # default review instructions
-    approve/approve.md            # default approve instructions
-scripts/
-  providers/
-    anthropic.sh                  # call_llm() via claude CLI
-    openai.sh                     # call_llm() via OpenAI API
+  prompts/
+    review/template/review.md     # review prompt template (always used)
+    review/skills/                # default skill files (fallback when repo has none)
+    approve/template/approve.md   # approve prompt template
+services/ai/
+  anthropic_service.sh            # call_llm() via claude CLI
+  openai_service.sh               # call_llm() via OpenAI API
 git-listeners/                    # per-repo config (gitignored)
-docs/                             # decision flows, troubleshooting, roadmap
+docs/                             # decision flows, troubleshooting, performance
 tests/                            # shell test suite
 ```
 
